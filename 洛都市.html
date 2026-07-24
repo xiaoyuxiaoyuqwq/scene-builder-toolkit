@@ -211,7 +211,7 @@ texLoader.load(
   (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    const waterGeo = new THREE.PlaneGeometry(40, 30);
+    const waterGeo = new THREE.PlaneGeometry(30, 40);
     water = new Water(waterGeo, {
       textureWidth: 512,
       textureHeight: 512,
@@ -223,27 +223,27 @@ texLoader.load(
       fog: false,
     });
     water.rotation.x = -Math.PI / 2;
-    water.position.set(15, 0.01, -10);
+    water.position.set(18, 0.01, 1);
     water.receiveShadow = true;
     scene.add(water);
     waterAnimate = true;
   },
   undefined,
   () => {
-    const fallbackGeo = new THREE.PlaneGeometry(40, 30);
+    const fallbackGeo = new THREE.PlaneGeometry(30, 40);
     const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x1a3555, roughness: 0.05, metalness: 0.5 });
     water = new THREE.Mesh(fallbackGeo, fallbackMat);
     water.rotation.x = -Math.PI / 2;
-    water.position.set(15, 0.01, -10);
+    water.position.set(18, 0.01, 1);
     water.receiveShadow = true;
     scene.add(water);
     waterAnimate = true;
   }
 );
 
-const beach = new THREE.Mesh(new THREE.PlaneGeometry(6, 14), M.sand);
+const beach = new THREE.Mesh(new THREE.PlaneGeometry(5, 24), M.sand);
 beach.rotation.x = -Math.PI / 2;
-beach.position.set(10, 0.015, -5);
+beach.position.set(9, 0.015, -1);
 scene.add(beach);
 
 /* ═══════ BUILDINGS — grid layout + collision-free + podium/tower variety ═══════ */
@@ -362,11 +362,11 @@ const mtownData = mSpecs.map(s => place(s[0], s[1], s[2], s[3], s[4], s[5], s[6]
 
 /* ── Sea-side buildings (coastal strip, lowest) ── */
 const seaSpecs = [
-  [9.0, -6.0, 0.6, 0.5, 0.8, M.conc2, 'box'],
-  [9.0, -4.0, 0.6, 0.5, 1.0, M.warm1, 'box'],
-  [9.0, -2.0, 0.6, 0.5, 0.9, M.conc1, 'box'],
-  [9.0, 0.0, 0.6, 0.5, 1.1, M.warm2, 'box'],
-  [9.0, 2.0, 0.6, 0.5, 0.8, M.conc3, 'box'],
+  [5.5, -4.5, 0.6, 0.5, 0.8, M.conc2, 'box'],
+  [5.5, -2.5, 0.6, 0.5, 1.0, M.warm1, 'box'],
+  [5.5, -0.5, 0.6, 0.5, 0.9, M.conc1, 'box'],
+  [5.5, 1.5, 0.6, 0.5, 1.1, M.warm2, 'box'],
+  [5.5, 3.5, 0.6, 0.5, 0.8, M.conc3, 'box'],
 ];
 seaSpecs.forEach(s => place(s[0], s[1], s[2], s[3], s[4], s[5], s[6]));
 
