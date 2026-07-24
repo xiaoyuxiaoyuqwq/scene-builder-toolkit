@@ -5,17 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>洛都市</title>
 <style>
-* { margin: 0; padding: 0; }
-body { overflow: hidden; background: #1a0a04; font-family: "Helvetica Neue", Arial, sans-serif; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #000; font-family: "Helvetica Neue", Arial, sans-serif; }
 canvas { display: block; }
-#info { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); color: rgba(255,200,150,0.3); text-align: center; pointer-events: none; z-index: 10; font-size: 12px; letter-spacing: 3px; text-shadow: 0 0 20px rgba(0,0,0,0.8); }
-#info span { display: inline-block; margin: 0 12px; }
-#title { position: fixed; top: 22px; left: 50%; transform: translateX(-50%); color: rgba(255,180,100,0.45); font-size: 28px; letter-spacing: 8px; pointer-events: none; z-index: 10; text-shadow: 0 2px 12px rgba(0,0,0,0.6); font-weight: 200; }
+#ui { position: fixed; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 20; }
+#ui button { padding: 7px 14px; border: 1px solid rgba(255,200,140,0.3); background: rgba(0,0,0,0.5); color: rgba(255,200,140,0.8); font-size: 12px; letter-spacing: 1px; border-radius: 4px; cursor: pointer; backdrop-filter: blur(6px); transition: all 0.3s; font-family: inherit; }
+#ui button:hover { background: rgba(0,0,0,0.7); border-color: rgba(255,200,140,0.6); color: rgba(255,200,140,1); }
+#ui button.active { background: rgba(255,140,40,0.2); border-color: rgba(255,140,40,0.6); color: #ffcc88; }
+#title { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: rgba(255,180,100,0.4); font-size: 26px; letter-spacing: 8px; pointer-events: none; z-index: 10; text-shadow: 0 2px 12px rgba(0,0,0,0.6); font-weight: 200; }
+#loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); color: rgba(255,200,140,0.6); font-size: 14px; letter-spacing: 2px; z-index: 30; pointer-events: none; transition: opacity 0.5s; }
 </style>
 </head>
 <body>
 <div id="title">LOS SANTOS</div>
-<div id="info"><span>拖拽旋转</span><span>滚轮缩放</span></div>
+<div id="loading">LOADING...</div>
+<div id="ui">
+  <button id="btn-mode" title="黄昏 ⇄ 夜间">🌅 日落 / 夜景</button>
+  <button id="btn-rain" title="晴 ⇄ 雨">☀ 天气</button>
+</div>
 
 <script type="importmap">
 {
@@ -33,21 +40,24 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { Water } from 'three/addons/objects/Water.js';
+/* GLB loader — 取消注释即可加载 Blender 导出的模型 ↓
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+*/
 
 function rng(a, b) { return a + Math.random() * (b - a); }
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+
+const V3 = THREE.Vector3;
+const Q = THREE.Quaternion;
+const M4 = THREE.Matrix4;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf59a50);
-scene.fog = new THREE.FogExp2(0xf5a060, 0.0018);
-
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 300);
-camera.position.set(5, 18, 28);
 
 const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.logarithmicDepthBuffer = true;
@@ -55,11 +65,8 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.85;
 document.body.appendChild(renderer.domElement);
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.12, 0.3, 0.1);
-composer.addPass(bloom);
-composer.addPass(new SMAAPass(window.innerWidth, window.innerHeight));
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(5, 18, 28);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(-2, 3, -3);
@@ -70,25 +77,53 @@ controls.maxDistance = 55;
 controls.maxPolarAngle = Math.PI / 2.15;
 controls.update();
 
-const clock = new THREE.Clock();
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.3, 0.1);
+composer.addPass(bloom);
+composer.addPass(new SMAAPass(innerWidth, innerHeight));
 
+/* ═══════ SKY ═══════ */
+const sky = new Sky();
+sky.scale.setScalar(250);
+
+const sunPos = new V3(-12, 3, -18);
+const moonPos = new V3(8, 3, -2);
+
+function updateSkyParams(t) {
+  const unis = sky.material.uniforms;
+  const turb = 2 + 6 * (1 - t);
+  const rayleigh = 0.5 + 1.5 * (1 - t);
+  const mie = 0.001 + 0.004 * (1 - t);
+  unis.turbidity.value = turb;
+  unis.rayleigh.value = rayleigh;
+  unis.mieCoefficient.value = mie;
+  unis.mieDirectionalG.value = 0.7;
+  const sp = new V3().lerpVectors(sunPos, moonPos, t).normalize().multiplyScalar(12);
+  unis.sunPosition.value.copy(sp);
+}
+sky.material.uniforms.sunPosition.value.copy(sunPos);
+scene.add(sky);
+
+/* ═══════ ENVIRONMENT MAP ═══════ */
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+const envMapRT = pmremGenerator.fromScene(scene, 0.04);
+scene.environment = envMapRT.texture;
+
+/* ═══════ LIGHTING ═══════ */
 const sun = new THREE.DirectionalLight(0xff8844, 2.8);
-sun.position.set(-12, 6, -18);
+sun.position.copy(sunPos);
 sun.castShadow = true;
-sun.shadow.mapSize.width = 2048;
-sun.shadow.mapSize.height = 2048;
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 80;
-sun.shadow.camera.left = -30;
-sun.shadow.camera.right = 30;
-sun.shadow.camera.top = 30;
-sun.shadow.camera.bottom = -30;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -30; sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30; sun.shadow.camera.bottom = -30;
 sun.shadow.bias = -0.003;
 scene.add(sun);
 
-const fill = new THREE.DirectionalLight(0x88aacc, 0.25);
-fill.position.set(5, 8, 10);
-scene.add(fill);
+const fillLight = new THREE.DirectionalLight(0x88aacc, 0.25);
+fillLight.position.set(5, 8, 10);
+scene.add(fillLight);
 
 const ambient = new THREE.AmbientLight(0xffccaa, 0.12);
 scene.add(ambient);
@@ -96,10 +131,10 @@ scene.add(ambient);
 const hemi = new THREE.HemisphereLight(0xffaa66, 0x446688, 0.25);
 scene.add(hemi);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(120, 80),
-  new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.95 })
-);
+/* ═══════ GROUND ═══════ */
+const groundGeo = new THREE.PlaneGeometry(120, 80);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.95 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
 ground.receiveShadow = true;
@@ -107,386 +142,641 @@ scene.add(ground);
 
 /* ═══════ MATERIALS ═══════ */
 const M = {};
-
-M.glass1 = new THREE.MeshStandardMaterial({ color: 0x2a4a6a, roughness: 0.15, metalness: 0.7 });
-M.glass2 = new THREE.MeshStandardMaterial({ color: 0x3a5a7a, roughness: 0.15, metalness: 0.65 });
-M.glass3 = new THREE.MeshStandardMaterial({ color: 0x4a6a8a, roughness: 0.15, metalness: 0.6 });
-M.glass4 = new THREE.MeshStandardMaterial({ color: 0x5a7a6a, roughness: 0.2,  metalness: 0.55 });
-M.warm1 = new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.6,  metalness: 0.0 });
+M.glass1 = new THREE.MeshPhysicalMaterial({ color: 0x2a4a6a, roughness: 0.15, metalness: 0.6, clearcoat: 0.15, clearcoatRoughness: 0.2 });
+M.glass2 = new THREE.MeshPhysicalMaterial({ color: 0x3a5a7a, roughness: 0.15, metalness: 0.55, clearcoat: 0.15, clearcoatRoughness: 0.2 });
+M.glass3 = new THREE.MeshPhysicalMaterial({ color: 0x4a6a8a, roughness: 0.15, metalness: 0.5, clearcoat: 0.1, clearcoatRoughness: 0.2 });
+M.glass4 = new THREE.MeshPhysicalMaterial({ color: 0x5a7a6a, roughness: 0.2, metalness: 0.5, clearcoat: 0.1, clearcoatRoughness: 0.2 });
+M.warm1 = new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.6, metalness: 0.0 });
 M.warm2 = new THREE.MeshStandardMaterial({ color: 0xd4c4a8, roughness: 0.55, metalness: 0.0 });
 M.warm3 = new THREE.MeshStandardMaterial({ color: 0xb8a890, roughness: 0.65, metalness: 0.0 });
-M.conc1 = new THREE.MeshStandardMaterial({ color: 0xa89880, roughness: 0.7,  metalness: 0.0 });
+M.conc1 = new THREE.MeshStandardMaterial({ color: 0xa89880, roughness: 0.7, metalness: 0.0 });
 M.conc2 = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.75, metalness: 0.0 });
-M.conc3 = new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.8,  metalness: 0.0 });
-M.dark  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.7,  metalness: 0.1 });
-M.met   = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, roughness: 0.3,  metalness: 0.6 });
-M.gold  = new THREE.MeshStandardMaterial({ color: 0xcc8833, roughness: 0.4,  metalness: 0.3 });
-M.palm  = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9,  metalness: 0.0, side: THREE.DoubleSide });
-M.road  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9,  metalness: 0.0 });
+M.conc3 = new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.8, metalness: 0.0 });
+M.dark  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.7, metalness: 0.1 });
+M.met   = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, roughness: 0.3, metalness: 0.6 });
+M.gold  = new THREE.MeshStandardMaterial({ color: 0xcc8833, roughness: 0.4, metalness: 0.3 });
+M.palm  = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide });
+M.road  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9, metalness: 0.0 });
 M.sand  = new THREE.MeshStandardMaterial({ color: 0xd4b888, roughness: 0.95, metalness: 0.0 });
-M.ocean = new THREE.MeshStandardMaterial({ color: 0x1a3555, roughness: 0.05, metalness: 0.5 });
 M.mtn   = new THREE.MeshStandardMaterial({ color: 0x3a2a3a, roughness: 0.95, metalness: 0.0, flatShading: true });
 M.mtnFog= new THREE.MeshStandardMaterial({ color: 0x5a4a5a, roughness: 0.95, metalness: 0.0, transparent: true, opacity: 0.5 });
+M.lampGlow = new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.7, depthWrite: false });
+M.carCabin = new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.1, metalness: 0.1 });
+M.winGlow  = new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: 0.1, depthWrite: false });
+M.winGlowN = new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: 0.35, depthWrite: false });
 
 const glassMats = [M.glass1, M.glass2, M.glass3, M.glass4];
 const warmMats  = [M.warm1, M.warm2, M.warm3];
 const concMats  = [M.conc1, M.conc2, M.conc3];
 
-/* ═══════ MOUNTAINS ═══════ */
-function createMountains() {
-  const g = new THREE.Group();
-  for (let i = 0; i < 25; i++) {
-    const w = rng(3, 8), h = rng(2, 7), d = rng(3, 8);
-    const hill = new THREE.Mesh(
-      new THREE.ConeGeometry(w, h, 6), M.mtn
-    );
-    hill.position.set(
-      rng(-30, -5),
-      -h * 0.5,
-      rng(-32, -22)
-    );
-    hill.castShadow = true;
-    g.add(hill);
-  }
-  for (let i = 0; i < 12; i++) {
-    const w = rng(4, 10), h = rng(1, 4), d = rng(4, 10);
-    const hill = new THREE.Mesh(
-      new THREE.ConeGeometry(w, h, 6), M.mtnFog
-    );
-    hill.position.set(
-      rng(-32, -8),
-      -h * 0.5,
-      rng(-28, -18)
-    );
-    g.add(hill);
-  }
-  return g;
+/* ═══════ MOUNTAINS (InstancedMesh) ═══════ */
+const mtnGeo = new THREE.ConeGeometry(1, 1, 6);
+
+function makeInstanced(count, geo, mat) {
+  const im = new THREE.InstancedMesh(geo, mat, count);
+  im.castShadow = true;
+  im.receiveShadow = true;
+  return im;
 }
-scene.add(createMountains());
 
-/* ═══════ OCEAN ═══════ */
-const ocean = new THREE.Mesh(
-  new THREE.PlaneGeometry(40, 30), M.ocean
-);
-ocean.rotation.x = -Math.PI / 2;
-ocean.position.set(15, 0.01, -10);
-ocean.receiveShadow = true;
-scene.add(ocean);
+const dummy = new THREE.Object3D();
+const _v = new V3();
+const _q = new Q();
 
-const beach = new THREE.Mesh(
-  new THREE.PlaneGeometry(6, 14), M.sand
+const mtnData = [];
+for (let i = 0; i < 30; i++) {
+  mtnData.push({
+    x: rng(-30, -3), z: rng(-32, -22),
+    w: rng(3, 8), h: rng(2, 7)
+  });
+}
+const mtnIM = makeInstanced(mtnData.length, mtnGeo, M.mtn);
+mtnData.forEach((d, i) => {
+  const s = 1 + d.h * 0.08;
+  dummy.position.set(d.x, -d.h * 0.5, d.z);
+  dummy.scale.set(d.w, d.h, d.w);
+  dummy.updateMatrix();
+  mtnIM.setMatrixAt(i, dummy.matrix);
+});
+mtnIM.castShadow = true;
+mtnIM.receiveShadow = true;
+mtnIM.instanceMatrix.needsUpdate = true;
+scene.add(mtnIM);
+
+/* ═══════ WATER ═══════ */
+let water, waterAnimate = false;
+const texLoader = new THREE.TextureLoader();
+texLoader.load(
+  'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/textures/waternormals.jpg',
+  (tex) => {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    const waterGeo = new THREE.PlaneGeometry(40, 30);
+    water = new Water(waterGeo, {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: tex,
+      sunDirection: sunPos.clone(),
+      sunColor: 0xff8844,
+      waterColor: 0x1a3555,
+      distortionScale: 2.5,
+      fog: false,
+    });
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(15, 0.01, -10);
+    water.receiveShadow = true;
+    scene.add(water);
+    waterAnimate = true;
+    document.getElementById('loading').style.opacity = '0';
+  },
+  undefined,
+  () => {
+    const fallbackGeo = new THREE.PlaneGeometry(40, 30);
+    const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x1a3555, roughness: 0.05, metalness: 0.5 });
+    water = new THREE.Mesh(fallbackGeo, fallbackMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(15, 0.01, -10);
+    water.receiveShadow = true;
+    scene.add(water);
+    waterAnimate = true;
+    document.getElementById('loading').style.opacity = '0';
+  }
 );
+
+const beach = new THREE.Mesh(new THREE.PlaneGeometry(6, 14), M.sand);
 beach.rotation.x = -Math.PI / 2;
 beach.position.set(10, 0.015, -5);
 scene.add(beach);
 
-/* ═══════ SKYSCRAPERS ═══════ */
-function createTower(x, z, h, w, d, opts) {
-  const g = new THREE.Group();
-  const glass = pick(glassMats);
-  const wall = pick(warmMats);
+/* ═══════ BUILDINGS (InstancedMesh body + optional features) ═══════ */
+const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glass);
-  body.position.y = h / 2;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  g.add(body);
-
-  if (opts?.setback) {
-    for (let s = 0; s < opts.setback; s++) {
-      const sr = 1 - (s + 1) * 0.15;
-      const sh = h * 0.12;
-      const sb = new THREE.Mesh(
-        new THREE.BoxGeometry(w * sr, sh, d * sr),
-        pick(warmMats)
-      );
-      sb.position.y = h + sh / 2 + s * (h * 0.02);
-      sb.castShadow = true;
-      g.add(sb);
-    }
-  }
-
-  if (opts?.spire) {
-    const sp = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.06, h * 0.15, 5), M.met
-    );
-    sp.position.y = h + 0.07;
-    g.add(sp);
-  }
-
-  if (opts?.frameLines) {
-    for (let fi = 0; fi < 4; fi++) {
-      const fl = new THREE.Mesh(
-        new THREE.BoxGeometry(0.015, h * 0.85, d + 0.02), M.met
-      );
-      fl.position.set(
-        -w / 2 + (w / 5) * (fi + 1),
-        h / 2,
-        0
-      );
-      g.add(fl);
-    }
-  }
-
-  if (opts?.roofStruct) {
-    const rs = new THREE.Mesh(
-      new THREE.BoxGeometry(w * 0.2, 0.08, d * 0.2), M.met
-    );
-    rs.position.y = h + 0.02;
-    g.add(rs);
-    for (let ri = 0; ri < 4; ri++) {
-      const ant = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.008, 0.008, h * 0.06, 3), M.met
-      );
-      ant.position.set(rng(-0.15, 0.15), h + 0.06 + h * 0.03, rng(-0.15, 0.15));
-      g.add(ant);
-    }
-  }
-
-  const winGlow = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 0.92, h * 0.7, 0.008),
-    new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: rng(0.05, 0.15), depthWrite: false })
-  );
-  winGlow.position.set(0, h / 2, d / 2 + 0.006);
-  g.add(winGlow);
-
-  g.position.set(x, 0, z);
-  return g;
+function collectInstances(matMap) {
+  const m = {};
+  for (const k of Object.keys(matMap)) m[k] = [];
+  return m;
 }
+
+const dBody = collectInstances({ g1: M.glass1, g2: M.glass2, g3: M.glass3, g4: M.glass4 });
+const mBody = collectInstances({ w1: M.warm1, w2: M.warm2, w3: M.warm3, c1: M.conc1, c2: M.conc2, c3: M.conc3 });
 
 const downtownData = [
-  { x: -6, z: -7, h: 5.0, w: 1.2, d: 0.8, opts: { setback: 1, spire: true, frameLines: true, roofStruct: true } },
-  { x: -4, z: -6, h: 4.0, w: 1.0, d: 1.0, opts: { frameLines: true } },
-  { x: -2, z: -8, h: 3.5, w: 0.8, d: 0.8, opts: { spire: true } },
-  { x: -3, z: -5, h: 2.5, w: 0.9, d: 0.7, opts: {} },
-  { x: -5, z: -5, h: 3.0, w: 1.1, d: 0.7, opts: { frameLines: true } },
-  { x: -1, z: -6, h: 4.5, w: 1.3, d: 0.9, opts: { setback: 2, spire: true, roofStruct: true } },
-  { x: -7, z: -6, h: 2.8, w: 1.0, d: 0.8, opts: {} },
-  { x: 0, z: -9, h: 3.2, w: 0.9, d: 0.9, opts: { frameLines: true } },
-  { x: -4, z: -9, h: 3.8, w: 1.0, d: 0.8, opts: { setback: 1, spire: true } },
-  { x: -6, z: -8, h: 2.2, w: 0.8, d: 0.7, opts: {} },
-  { x: -1, z: -5, h: 1.8, w: 0.7, d: 0.6, opts: {} },
-  { x: 1, z: -7, h: 3.0, w: 1.0, d: 0.8, opts: { frameLines: true } },
-  { x: 2, z: -6, h: 2.5, w: 0.8, d: 0.7, opts: {} },
-  { x: -3, z: -10, h: 2.0, w: 0.9, d: 0.6, opts: {} },
-  { x: -8, z: -9, h: 1.8, w: 0.7, d: 0.7, opts: {} },
-  { x: -5, z: -11, h: 2.2, w: 0.8, d: 0.6, opts: {} },
-  { x: 1, z: -9, h: 1.6, w: 0.6, d: 0.6, opts: {} },
-  { x: 3, z: -8, h: 2.0, w: 0.7, d: 0.7, opts: {} },
-  { x: -2, z: -11, h: 1.8, w: 0.6, d: 0.6, opts: {} },
-  { x: -7, z: -10, h: 1.6, w: 0.6, d: 0.6, opts: {} },
-  { x: 0, z: -11, h: 1.4, w: 0.7, d: 0.5, opts: {} },
-  { x: -9, z: -7, h: 1.8, w: 0.8, d: 0.5, opts: {} },
-  { x: 2, z: -10, h: 1.6, w: 0.6, d: 0.6, opts: {} },
-  { x: -1, z: -12, h: 1.2, w: 0.7, d: 0.5, opts: {} },
-  { x: -6, z: -4, h: 1.4, w: 0.6, d: 0.6, opts: {} },
+  { x:-6,z:-7, h:5.0,w:1.2,d:0.8, mat:'g1', opt:'setback,spire,frames,roof' },
+  { x:-4,z:-6, h:4.0,w:1.0,d:1.0, mat:'g2', opt:'frames' },
+  { x:-2,z:-8, h:3.5,w:0.8,d:0.8, mat:'g3', opt:'spire' },
+  { x:-3,z:-5, h:2.5,w:0.9,d:0.7, mat:'w1', opt:'' },
+  { x:-5,z:-5, h:3.0,w:1.1,d:0.7, mat:'g4', opt:'frames' },
+  { x:-1,z:-6, h:4.5,w:1.3,d:0.9, mat:'g1', opt:'setback,spire,roof' },
+  { x:-7,z:-6, h:2.8,w:1.0,d:0.8, mat:'w2', opt:'' },
+  { x:0,z:-9,  h:3.2,w:0.9,d:0.9, mat:'g2', opt:'frames' },
+  { x:-4,z:-9, h:3.8,w:1.0,d:0.8, mat:'g3', opt:'setback,spire' },
+  { x:-6,z:-8, h:2.2,w:0.8,d:0.7, mat:'c1', opt:'' },
+  { x:-1,z:-5, h:1.8,w:0.7,d:0.6, mat:'c2', opt:'' },
+  { x:1,z:-7,  h:3.0,w:1.0,d:0.8, mat:'g4', opt:'frames' },
+  { x:2,z:-6,  h:2.5,w:0.8,d:0.7, mat:'w3', opt:'' },
+  { x:-3,z:-10,h:2.0,w:0.9,d:0.6, mat:'c3', opt:'' },
+  { x:-8,z:-9, h:1.8,w:0.7,d:0.7, mat:'c1', opt:'' },
+  { x:-5,z:-11,h:2.2,w:0.8,d:0.6, mat:'w1', opt:'' },
+  { x:1,z:-9,  h:1.6,w:0.6,d:0.6, mat:'c2', opt:'' },
+  { x:3,z:-8,  h:2.0,w:0.7,d:0.7, mat:'w2', opt:'' },
+  { x:-2,z:-11,h:1.8,w:0.6,d:0.6, mat:'c3', opt:'' },
+  { x:-7,z:-10,h:1.6,w:0.6,d:0.6, mat:'w3', opt:'' },
+  { x:0,z:-11, h:1.4,w:0.7,d:0.5, mat:'c1', opt:'' },
+  { x:-9,z:-7, h:1.8,w:0.8,d:0.5, mat:'c2', opt:'' },
+  { x:2,z:-10, h:1.6,w:0.6,d:0.6, mat:'c3', opt:'' },
+  { x:-1,z:-12,h:1.2,w:0.7,d:0.5, mat:'w1', opt:'' },
+  { x:-6,z:-4, h:1.4,w:0.6,d:0.6, mat:'w2', opt:'' },
 ];
 
+function addBody(collection, d) {
+  const key = d.mat;
+  const target = dBody[key] || mBody[key];
+  if (target) target.push({ x: d.x, z: d.z, h: d.h, w: d.w, d: d.d });
+}
+
 downtownData.forEach(d => {
-  scene.add(createTower(d.x, d.z, d.h, d.w, d.d, d.opts));
+  addBody(dBody, d);
+  addBody(mBody, d);
 });
 
-/* ═══════ MIDTOWN ═══════ */
-function createBuilding(x, z, h, w, d, color) {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), color);
-  body.position.y = h / 2;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  g.add(body);
-
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(w + 0.04, 0.03, d + 0.04), pick(concMats)
-  );
-  roof.position.y = h + 0.015;
-  g.add(roof);
-
-  g.position.set(x, 0, z);
-  return g;
+/* ── Spawn InstancedMeshes ── */
+function spawnIM(collection) {
+  for (const [key, data] of Object.entries(collection)) {
+    if (!data.length) continue;
+    const mat = collection._matMap ? collection._matMap[key] : (M[key] || pick(glassMats));
+    const im = makeInstanced(data.length, bodyGeo, mat);
+    data.forEach((d, i) => {
+      dummy.position.set(d.x, d.h / 2, d.z);
+      dummy.scale.set(d.w, d.h, d.d);
+      dummy.updateMatrix();
+      im.setMatrixAt(i, dummy.matrix);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    scene.add(im);
+  }
 }
 
-const mTownData = [];
+const mtownData = [];
 for (let i = 0; i < 30; i++) {
-  const x = rng(-10, 5);
-  const z = rng(-4, 6);
-  const h = rng(0.6, 2.0);
-  const w = rng(0.5, 1.0);
-  const d = rng(0.4, 0.9);
-  const color = pick([...warmMats, ...concMats, M.conc3, M.warm1]);
-  mTownData.push({ x, z, h, w, d, color });
+  mtownData.push({
+    x: rng(-10, 5), z: rng(-4, 6),
+    h: rng(0.6, 2.0), w: rng(0.5, 1.0), d: rng(0.4, 0.9),
+    mat: pick([...warmMats, ...concMats, M.conc3, M.warm1])
+  });
 }
-mTownData.forEach(d => {
-  scene.add(createBuilding(d.x, d.z, d.h, d.w, d.d, d.color));
+const mtBody = {};
+mtownData.forEach(d => {
+  const key = d.mat.uuid;
+  if (!mtBody[key]) mtBody[key] = { mat: d.mat, data: [] };
+  mtBody[key].data.push(d);
+});
+for (const [key, grp] of Object.entries(mtBody)) {
+  const im = makeInstanced(grp.data.length, bodyGeo, grp.mat);
+  grp.data.forEach((d, i) => {
+    dummy.position.set(d.x, d.h / 2, d.z);
+    dummy.scale.set(d.w, d.h, d.d);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  im.castShadow = true;
+  im.receiveShadow = true;
+  scene.add(im);
+}
+
+/* ── Optional features (setbacks, spires, frame lines, roof structures) ── */
+downtownData.forEach(d => {
+  if (!d.opt) return;
+  const opts = d.opt.split(',');
+  const { x, z, h, w, d: bd } = d;
+
+  opts.forEach(opt => {
+    if (opt === 'setback') {
+      for (let s = 0; s < 2; s++) {
+        const sr = 1 - (s + 1) * 0.15;
+        const sh = h * 0.12;
+        const sb = new THREE.Mesh(new THREE.BoxGeometry(w * sr, sh, bd * sr), pick(warmMats));
+        sb.position.set(x, h + sh / 2 + s * (h * 0.02), z);
+        sb.castShadow = true;
+        scene.add(sb);
+      }
+    }
+    if (opt === 'spire') {
+      const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.06, h * 0.15, 5), M.met);
+      sp.position.set(x, h + 0.07, z);
+      scene.add(sp);
+    }
+    if (opt === 'frames') {
+      for (let fi = 0; fi < 4; fi++) {
+        const fl = new THREE.Mesh(new THREE.BoxGeometry(0.015, h * 0.85, bd + 0.02), M.met);
+        fl.position.set(x - w / 2 + (w / 5) * (fi + 1), h / 2, z);
+        scene.add(fl);
+      }
+    }
+    if (opt === 'roof') {
+      const rs = new THREE.Mesh(new THREE.BoxGeometry(w * 0.2, 0.08, bd * 0.2), M.met);
+      rs.position.set(x, h + 0.02, z);
+      scene.add(rs);
+      for (let ri = 0; ri < 4; ri++) {
+        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, h * 0.06, 3), M.met);
+        ant.position.set(x + rng(-0.15, 0.15), h + 0.06 + h * 0.03, z + rng(-0.15, 0.15));
+        scene.add(ant);
+      }
+    }
+  });
 });
 
-/* ═══════ HIGHWAY ═══════ */
-const highwayY = 0.05;
-for (let hi = -4; hi <= 6; hi += 0.8) {
-  const road = new THREE.Mesh(
-    new THREE.BoxGeometry(0.25, 0.02, 0.8), M.road
-  );
-  road.position.set(hi * 0.5 + 0.5, highwayY, 8 + Math.sin(hi * 0.3) * 2);
-  road.receiveShadow = true;
-  scene.add(road);
-}
+/* ── Window glow for tall buildings ── */
+downtownData.forEach(d => {
+  if (d.h < 2.5) return;
+  const wg = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.85, d.h * 0.6), M.winGlow);
+  wg.position.set(d.x, d.h / 2, d.z + d.d / 2 + 0.005);
+  wg.renderOrder = 1;
+  scene.add(wg);
+  const wg2 = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.85, d.h * 0.6), M.winGlow);
+  wg2.position.set(d.x, d.h / 2, d.z - d.d / 2 - 0.005);
+  wg2.rotation.y = Math.PI;
+  wg2.renderOrder = 1;
+  scene.add(wg2);
+});
 
+/* ═══════ HIGHWAY (InstancedMesh) ═══════ */
+const hwGeo = new THREE.BoxGeometry(0.25, 0.02, 0.8);
+const hwCount = 14;
+const hwIM = makeInstanced(hwCount, hwGeo, M.road);
+const hwData = [];
+for (let hi = 0; hi < hwCount; hi++) {
+  hwData.push({ x: hi * 0.5 - 3, z: 8 + Math.sin(hi * 0.3) * 2 });
+}
+hwData.forEach((d, i) => {
+  dummy.position.set(d.x, 0.05, d.z);
+  dummy.scale.set(1, 1, 1);
+  dummy.updateMatrix();
+  hwIM.setMatrixAt(i, dummy.matrix);
+});
+hwIM.instanceMatrix.needsUpdate = true;
+hwIM.receiveShadow = true;
+scene.add(hwIM);
+
+/* ── Overpass pillars ── */
+const pillarGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.2, 4);
+const overGeo = new THREE.BoxGeometry(0.1, 0.08, 0.6);
 for (let hi = 0; hi < 8; hi++) {
-  const over = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.08, 0.6), M.conc2
-  );
-  over.position.set(rng(-5, 3), 0.15, rng(5, 11));
+  const ox = rng(-5, 3), oz = rng(5, 11);
+  const over = new THREE.Mesh(overGeo, M.conc2);
+  over.position.set(ox, 0.15, oz);
   scene.add(over);
   for (let pi = 0; pi < 2; pi++) {
-    const pillar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.02, 0.2, 4), M.conc3
-    );
-    pillar.position.set(
-      over.position.x + (pi - 0.5) * 0.35,
-      0.08,
-      over.position.z
-    );
+    const pillar = new THREE.Mesh(pillarGeo, M.conc3);
+    pillar.position.set(ox + (pi - 0.5) * 0.35, 0.08, oz);
     scene.add(pillar);
   }
 }
 
-for (let li = 0; li < 30; li++) {
-  const lamp = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.008, 0.012, 0.2, 4), M.dark
-  );
-  lamp.position.set(
-    rng(-6, 5),
-    0.1,
-    rng(5, 12)
-  );
-  scene.add(lamp);
+/* ═══════ STREET LAMPS (InstancedMesh) ═══════ */
+const lampGeo = new THREE.CylinderGeometry(0.008, 0.012, 0.2, 4);
+const lampCount = 30;
+const lampIM = makeInstanced(lampCount, lampGeo, M.dark);
+const lampData = [];
+for (let li = 0; li < lampCount; li++) {
+  lampData.push({ x: rng(-6, 5), z: rng(5, 12), glow: Math.random() > 0.4 });
+}
+lampData.forEach((d, i) => {
+  dummy.position.set(d.x, 0.1, d.z);
+  dummy.scale.set(1, 1, 1);
+  dummy.updateMatrix();
+  lampIM.setMatrixAt(i, dummy.matrix);
+});
+lampIM.instanceMatrix.needsUpdate = true;
+scene.add(lampIM);
+
+/* Lamp glow lights */
+const lampGlowGeo = new THREE.SphereGeometry(0.012, 4, 4);
+lampData.forEach(d => {
+  if (!d.glow) return;
+  const gl = new THREE.Mesh(lampGlowGeo, M.lampGlow);
+  gl.position.set(d.x, 0.19, d.z);
+  gl.renderOrder = 2;
+  scene.add(gl);
+});
+
+/* ═══════ PALM TREES (InstancedMesh for components) ═══════ */
+const palmTrunkGeo = new THREE.CylinderGeometry(0.03, 0.06, 1, 6);
+const palmFrondGeo = new THREE.PlaneGeometry(0.35, 0.025);
+
+const palmData = [];
+for (let pi = 0; pi < 25; pi++) {
+  palmData.push({ x: rng(-8, 6), z: rng(7, 16), h: rng(1.8, 3.2) });
+}
+for (let pi = 0; pi < 8; pi++) {
+  palmData.push({ x: rng(-3, 5), z: rng(-4, 3), h: rng(1.2, 2.0) });
 }
 
-/* ═══════ PALM TREES ═══════ */
-function createPalm(x, z, h) {
-  const g = new THREE.Group();
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.03, 0.06, h, 6), M.palm
-  );
-  trunk.position.y = h / 2;
-  trunk.rotation.z = rng(-0.06, 0.06);
-  g.add(trunk);
+const trunkIM = makeInstanced(palmData.length, palmTrunkGeo, M.palm);
+palmData.forEach((d, i) => {
+  dummy.position.set(d.x, d.h / 2, d.z);
+  dummy.scale.set(1, d.h, 1);
+  dummy.rotation.z = rng(-0.06, 0.06);
+  dummy.rotation.y = Math.random() * Math.PI * 2;
+  dummy.updateMatrix();
+  trunkIM.setMatrixAt(i, dummy.matrix);
+});
+trunkIM.instanceMatrix.needsUpdate = true;
+scene.add(trunkIM);
 
-  for (let f = 0; f < 10; f++) {
-    const angle = (f / 10) * Math.PI * 2 + rng(-0.1, 0.1);
+/* Fronds as individual meshes (since they need complex transforms per frond) */
+palmData.forEach(d => {
+  const fCount = 10;
+  for (let f = 0; f < fCount; f++) {
+    const angle = (f / fCount) * Math.PI * 2 + rng(-0.1, 0.1);
     for (let s = 0; s < 3; s++) {
-      const frond = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.35 + s * 0.08, 0.025), M.palm
+      const frd = new THREE.Mesh(palmFrondGeo, M.palm);
+      frd.position.set(
+        d.x + Math.cos(angle) * (0.15 + s * 0.12),
+        d.h - 0.03 + s * 0.04,
+        d.z + Math.sin(angle) * (0.15 + s * 0.12)
       );
-      frond.position.set(
-        Math.cos(angle) * (0.15 + s * 0.12),
-        h - 0.03 + s * 0.04,
-        Math.sin(angle) * (0.15 + s * 0.12)
-      );
-      frond.rotation.y = angle + rng(-0.1, 0.1);
-      frond.rotation.x = Math.PI / 2.5 + s * 0.15;
-      frond.rotation.z = rng(-0.2, 0.2);
-      g.add(frond);
+      frd.rotation.set(Math.PI / 2.5 + s * 0.15, angle + rng(-0.1, 0.1), rng(-0.2, 0.2));
+      scene.add(frd);
     }
   }
+});
 
-  g.position.set(x, 0, z);
-  g.rotation.y = Math.random() * Math.PI * 2;
-  return g;
+/* ═══════ FRONT ROAD (InstancedMesh) ═══════ */
+const frGeo = new THREE.BoxGeometry(0.15, 0.015, 0.5);
+const frCount = 24;
+const frIM = makeInstanced(frCount, frGeo, M.road);
+const frData = [];
+for (let fi = 0; fi < frCount; fi++) {
+  frData.push({ x: fi * 0.3 - 3.5, z: 15 + Math.sin(fi * 0.5) * 0.8 });
 }
+frData.forEach((d, i) => {
+  dummy.position.set(d.x, 0.015, d.z);
+  dummy.scale.set(1, 1, 1);
+  dummy.updateMatrix();
+  frIM.setMatrixAt(i, dummy.matrix);
+});
+frIM.instanceMatrix.needsUpdate = true;
+frIM.receiveShadow = true;
+scene.add(frIM);
 
-for (let pi = 0; pi < 25; pi++) {
-  const px = rng(-8, 6);
-  const pz = rng(7, 16);
-  const ph = rng(1.5, 3.0);
-  scene.add(createPalm(px, pz, ph));
-}
+/* ═══════ CARS (InstancedMesh per color) ═══════ */
+const carBodyGeo = new THREE.BoxGeometry(0.18, 0.04, 0.09);
+const carCabinGeo = new THREE.BoxGeometry(0.1, 0.025, 0.07);
+const carHLGeo = new THREE.SphereGeometry(0.008, 4, 4);
 
-for (let pi = 0; pi < 8; pi++) {
-  const px = rng(-3, 5);
-  const pz = rng(-4, 3);
-  const ph = rng(1.2, 2.0);
-  scene.add(createPalm(px, pz, ph));
-}
-
-/* ═══════ CARS ═══════ */
-const cars = [];
 const carColors = [0xcc2222, 0x2244cc, 0xeeeeee, 0x222222, 0x22aa44, 0xffcc00, 0xcc44cc, 0x888888];
+const carsByColor = {};
+carColors.forEach(c => { carsByColor[c] = []; });
+
+const carData = [];
 for (let ci = 0; ci < 18; ci++) {
-  const g = new THREE.Group();
-  const bodyColor = pick(carColors);
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 0.04, 0.09),
-    new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.3, metalness: 0.5 })
-  );
-  body.position.y = 0.03;
-  g.add(body);
-  const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.025, 0.07),
-    new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.1, metalness: 0.1 })
-  );
-  cabin.position.set(0, 0.06, 0);
-  g.add(cabin);
-
-  const hl = new THREE.Mesh(
-    new THREE.SphereGeometry(0.008, 4, 4),
-    new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.7, depthWrite: false })
-  );
-  hl.position.set(0.09, 0.02, 0.04);
-  g.add(hl);
-  const hl2 = hl.clone();
-  hl2.position.set(0.09, 0.02, -0.04);
-  g.add(hl2);
-
   const side = ci % 2 === 0 ? 1 : -1;
-  const zOff = rng(0, 1);
-  g.position.set(
-    rng(-3, 4) + side * 0.2,
-    0.04,
-    7.5 + zOff * 3 + Math.sin(ci * 0.7) * 1.5 + 0.15
-  );
-  g.rotation.y = side * rng(0.8, 1.2);
-  g.userData = { speed: rng(0.008, 0.025), dir: side };
-  scene.add(g);
-  cars.push(g);
+  const color = pick(carColors);
+  carData.push({
+    x: rng(-3, 4) + side * 0.2,
+    z: 7.5 + rng(0, 3),
+    color, side,
+    speed: rng(0.008, 0.025),
+  });
 }
 
-/* ═══════ FRONT ROAD (strip) ═══════ */
-for (let fi = -6; fi <= 6; fi += 0.5) {
-  const frontRoad = new THREE.Mesh(
-    new THREE.BoxGeometry(0.15, 0.015, 0.5), M.road
-  );
-  frontRoad.position.set(fi * 0.3, 0.015, 15 + Math.sin(fi * 0.5) * 0.8);
-  frontRoad.receiveShadow = true;
-  scene.add(frontRoad);
+carData.forEach(d => {
+  carsByColor[d.color].push({ x: d.x, y: 0.04, z: d.z, rotY: d.side * rng(0.8, 1.2) });
+});
+
+const carBodIMs = [];
+for (const [color, data] of Object.entries(carsByColor)) {
+  if (!data.length) continue;
+  const mat = new THREE.MeshStandardMaterial({ color: parseInt(color), roughness: 0.3, metalness: 0.5 });
+  const im = makeInstanced(data.length, carBodyGeo, mat);
+  data.forEach((d, i) => {
+    dummy.position.set(d.x, d.y + 0.03, d.z);
+    dummy.rotation.set(0, d.rotY, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  scene.add(im);
+  carBodIMs.push(im);
 }
 
-/* ═══════ CITY LIGHT GLOW (ambient glow over city) ═══════ */
-const glowPlane = new THREE.Mesh(
+/* Car cabins (InstancedMesh) */
+const cabinData = carData.map(d => ({
+  x: d.x, z: d.z, rotY: d.side * rng(0.8, 1.2), side: d.side, speed: d.speed,
+}));
+const cabinIM = makeInstanced(cabinData.length, carCabinGeo, M.carCabin);
+cabinData.forEach((d, i) => {
+  dummy.position.set(d.x, 0.06, d.z);
+  dummy.rotation.set(0, d.rotY, 0);
+  dummy.scale.set(1, 1, 1);
+  dummy.updateMatrix();
+  cabinIM.setMatrixAt(i, dummy.matrix);
+});
+cabinIM.instanceMatrix.needsUpdate = true;
+scene.add(cabinIM);
+
+/* Car headlights (individual for glow + animation) */
+const carLights = [];
+carData.forEach(d => {
+  for (let si = -1; si <= 1; si += 2) {
+    const hl = new THREE.Mesh(carHLGeo, M.lampGlow);
+    hl.position.set(d.x + 0.09 * d.side, 0.04, d.z + si * 0.04);
+    hl.renderOrder = 2;
+    scene.add(hl);
+    carLights.push({ mesh: hl, baseX: d.x, baseZ: d.z, side: d.side, speed: d.speed, zOff: si * 0.04 });
+  }
+});
+
+/* ═══════ CITY GLOW LAYER ═══════ */
+const cityGlow = new THREE.Mesh(
   new THREE.PlaneGeometry(30, 20),
-  new THREE.MeshBasicMaterial({
-    color: 0xff8844,
-    transparent: true,
-    opacity: 0.04,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  })
+  new THREE.MeshBasicMaterial({ color: 0xff8844, transparent: true, opacity: 0.04, side: THREE.DoubleSide, depthWrite: false })
 );
-glowPlane.rotation.x = -Math.PI / 2;
-glowPlane.position.set(-3, 0.1, -4);
-scene.add(glowPlane);
+cityGlow.rotation.x = -Math.PI / 2;
+cityGlow.position.set(-3, 0.1, -4);
+cityGlow.renderOrder = 0;
+scene.add(cityGlow);
+
+/* ═══════ RAIN SYSTEM ═══════ */
+const rainCount = 3000;
+const rainGeo = new THREE.BufferGeometry();
+const rainPositions = new Float32Array(rainCount * 3);
+for (let i = 0; i < rainCount * 3; i += 3) {
+  rainPositions[i] = rng(-20, 25);
+  rainPositions[i + 1] = rng(0, 20);
+  rainPositions[i + 2] = rng(-20, 20);
+}
+rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+const rainMat = new THREE.PointsMaterial({ color: 0xaaccff, size: 0.03, transparent: true, opacity: 0.3, depthWrite: false });
+const rainSystem = new THREE.Points(rainGeo, rainMat);
+rainSystem.visible = false;
+scene.add(rainSystem);
+
+/* ═══════ STATE ═══════ */
+const state = {
+  isNight: false,
+  weather: 0,
+  targetNight: 0,
+  currentNight: 0,
+  envDirty: false,
+};
+const weatherLabels = ['☀ 晴', '🌧 雨', '🌫 雾'];
+
+function regenEnv() {
+  scene.environment = pmremGenerator.fromScene(scene, 0.04).texture;
+  state.envDirty = false;
+}
+
+/* ═══════ UI ═══════ */
+const btnMode = document.getElementById('btn-mode');
+const btnRain = document.getElementById('btn-rain');
+
+btnMode.addEventListener('click', () => {
+  state.isNight = !state.isNight;
+  state.targetNight = state.isNight ? 1 : 0;
+  state.envDirty = true;
+  btnMode.textContent = state.isNight ? '🌃 夜景 / 日落' : '🌅 日落 / 夜景';
+});
+
+btnRain.addEventListener('click', () => {
+  state.weather = (state.weather + 1) % 3;
+  state.envDirty = true;
+  btnRain.textContent = weatherLabels[state.weather];
+  btnRain.classList.toggle('active', state.weather > 0);
+  rainSystem.visible = state.weather === 1;
+});
+
+/* ═══════ ANIMATION ═══════ */
+const clock = new THREE.Clock();
+
+/* Precompute car → InstancedMesh index mapping */
+const carBodMap = []; // [{ im, localIdx }]
+carData.forEach(d => {
+  const colorData = carsByColor[d.color];
+  const localIdx = colorData.findIndex(cd => Math.abs(cd.x - d.x) < 0.01);
+  const im = carBodIMs.find(m => m.material.color.getHex() === d.color);
+  carBodMap.push({ im, idx: Math.max(0, localIdx) });
+});
+
+const cabinMatrices = new Float32Array(cabinData.length * 16);
+
+function updateCars() {
+  /* Cabins */
+  carData.forEach((d, i) => {
+    const off = i * 16;
+    const cos = Math.cos(d.side * 0.9), sin = Math.sin(d.side * 0.9);
+    cabinMatrices[off + 0] = cos;  cabinMatrices[off + 1] = 0;  cabinMatrices[off + 2] = sin;  cabinMatrices[off + 3] = 0;
+    cabinMatrices[off + 4] = 0;    cabinMatrices[off + 5] = 1;  cabinMatrices[off + 6] = 0;    cabinMatrices[off + 7] = 0;
+    cabinMatrices[off + 8] = -sin; cabinMatrices[off + 9] = 0;  cabinMatrices[off + 10] = cos; cabinMatrices[off + 11] = 0;
+    cabinMatrices[off + 12] = d.x; cabinMatrices[off + 13] = 0.06; cabinMatrices[off + 14] = d.z; cabinMatrices[off + 15] = 1;
+  });
+  cabinIM.instanceMatrix.copyArray(cabinMatrices);
+  cabinIM.instanceMatrix.needsUpdate = true;
+
+  /* Bodies (grouped by color IM) */
+  carBodIMs.forEach(im => { im.instanceMatrix.needsUpdate = true; });
+}
 
 function animate() {
   requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
   const t = clock.getElapsedTime();
 
-  cars.forEach(car => {
-    car.position.x += car.userData.dir * car.userData.speed;
-    if (Math.abs(car.position.x) > 6) {
-      car.userData.dir *= -1;
-      car.rotation.y = -car.rotation.y;
-    }
-    car.position.z += Math.sin(t * 0.5 + car.position.x) * 0.001;
+  /* Smooth day/night transition */
+  state.currentNight += (state.targetNight - state.currentNight) * dt * 2;
+  const nt = state.currentNight;
+
+  /* Sky */
+  updateSkyParams(nt);
+
+  /* Lighting */
+  const nightMix = nt;
+  sun.color.setRGB(
+    1 - nightMix * 0.8,
+    0.53 - nightMix * 0.4,
+    0.27 - nightMix * 0.2
+  );
+  sun.intensity = 2.8 * (1 - nightMix * 0.9);
+  ambient.color.setRGB(
+    1 - nightMix * 0.9,
+    0.8 - nightMix * 0.6,
+    0.67 - nightMix * 0.5
+  );
+  ambient.intensity = 0.12 + nightMix * 0.05;
+  fillLight.intensity = 0.25 * (1 - nightMix * 0.7);
+  hemi.intensity = 0.25 * (1 - nightMix * 0.5);
+
+  /* Bloom */
+  bloom.strength = 0.12 + nightMix * 0.15;
+
+  /* Window glow */
+  M.winGlow.opacity = 0.1 + nightMix * 0.25;
+
+  /* City glow layer */
+  cityGlow.material.opacity = 0.04 + nightMix * 0.06;
+
+  /* Sun position lerp */
+  const sp = new V3().lerpVectors(sunPos, moonPos, nt);
+  sun.position.copy(sp);
+  if (waterAnimate && water && water.material.uniforms) {
+    water.material.uniforms.sunDirection.value.copy(sp.normalize());
+    water.material.uniforms.sunColor.value.setRGB(
+      1 - nightMix * 0.8,
+      0.45 - nightMix * 0.35,
+      0.2
+    );
+  }
+
+  /* Water animation */
+  if (waterAnimate && water && water.material.uniforms) {
+    water.material.uniforms.time.value += dt;
+  }
+
+  /* Cars */
+  carData.forEach((d, i) => {
+    d.x += d.side * d.speed;
+    if (Math.abs(d.x) > 6) { d.side *= -1; }
+    d.z += Math.sin(t * 0.5 + d.x) * 0.001;
   });
+  updateCars();
+
+  /* Env map regeneration (batched, not every frame) */
+  if (state.envDirty && Math.abs(state.currentNight - state.targetNight) < 0.02) {
+    regenEnv();
+  }
+
+  /* Car lights update */
+  carLights.forEach((cl, i) => {
+    const cd = carData[Math.floor(i / 2)];
+    if (!cd) return;
+    cl.mesh.position.set(cd.x + 0.09 * cd.side, 0.04, cd.z + cl.zOff);
+    cl.mesh.material.opacity = 0.7 + Math.sin(t * 10 + i) * 0.2;
+  });
+
+  /* Rain */
+  if (state.weather === 1) {
+    const pos = rainGeo.attributes.position.array;
+    for (let i = 0; i < rainCount * 3; i += 3) {
+      pos[i + 1] -= dt * rng(3, 8);
+      if (pos[i + 1] < -1) {
+        pos[i + 1] = 20;
+        pos[i] = rng(-20, 25);
+        pos[i + 2] = rng(-20, 20);
+      }
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+  }
+
+  /* Fog */
+  if (state.weather === 2) {
+    scene.fog = new THREE.FogExp2(0xccbba0, 0.005);
+  } else if (state.weather === 1) {
+    scene.fog = new THREE.FogExp2(0x8899bb, 0.004);
+  } else {
+    scene.fog = null;
+  }
 
   controls.update();
   composer.render();
@@ -494,13 +784,37 @@ function animate() {
 
 animate();
 
+/* Resize */
 window.addEventListener('resize', () => {
-  const w = window.innerWidth, h = window.innerHeight;
+  const w = innerWidth, h = innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   composer.setSize(w, h);
 });
+
+/* ═══════ GLB 导入基础设施 ═══════ */
+/*
+// Blender 导出 GLB 后，取消下面注释即可加载
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const gltfLoader = new GLTFLoader();
+
+// 示例：加载摩天楼主体模型
+gltfLoader.load('models/skyscraper_a.glb', (gltf) => {
+  const model = gltf.scene;
+  model.position.set(-6, 0, -7);
+  model.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+  scene.add(model);
+});
+
+// 加载棕榈树模型
+gltfLoader.load('models/palm_tree.glb', (gltf) => ...);
+*/
 </script>
 </body>
 </html>
