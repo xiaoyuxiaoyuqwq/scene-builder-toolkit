@@ -207,7 +207,7 @@ scene.add(mtnIM);
 let water, waterAnimate = false;
 const texLoader = new THREE.TextureLoader();
 texLoader.load(
-  'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/textures/waternormals.jpg',
+  'https://threejs.org/examples/textures/waternormals.jpg',
   (tex) => {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
@@ -248,6 +248,7 @@ scene.add(beach);
 
 /* ═══════ BUILDINGS — grid layout + collision-free + podium/tower variety ═══════ */
 const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
+const matLookup = { g1: M.glass1, g2: M.glass2, g3: M.glass3, g4: M.glass4, w1: M.warm1, w2: M.warm2, w3: M.warm3, c1: M.conc1, c2: M.conc2, c3: M.conc3 };
 
 /* ── Collision checker ── */
 const placed = [];
