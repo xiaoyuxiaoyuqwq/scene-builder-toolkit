@@ -495,61 +495,86 @@ pillarIM.instanceMatrix.needsUpdate = true;
 pillarIM.castShadow = true;
 scene.add(pillarIM);
 
-/* ── Roof equipment (AC + penthouse + antenna + water tank) ── */
-const acGeo = new THREE.BoxGeometry(0.06, 0.04, 0.07);
+/* ── Roof equipment (InstancedMesh) ── */
 const pentGeo = new THREE.BoxGeometry(1, 0.12, 1);
+const acGeo = new THREE.BoxGeometry(0.06, 0.04, 0.07);
+const tankGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.12, 6);
+const antGeo = new THREE.CylinderGeometry(0.004, 0.008, 1, 4);
+
+const pentData = [], acData = [], tankData = [], antData = [];
 allBuildings.forEach(d => {
   if (d.h < 2.0) return;
-  /* Penthouse */
-  const pent = new THREE.Mesh(pentGeo, M.conc2);
-  pent.scale.set(d.w * 0.1, 1, d.d * 0.1);
-  pent.position.set(d.x + d.w * 0.08, d.h + 0.06, d.z);
-  pent.castShadow = true;
-  scene.add(pent);
-  /* AC units */
+  pentData.push({ x: d.x + d.w * 0.08, y: d.h + 0.06, z: d.z, w: d.w * 0.1, d: d.d * 0.1 });
   for (let a = 0; a < Math.floor(rng(1, 4)); a++) {
-    const ac = new THREE.Mesh(acGeo, M.met);
-    ac.position.set(d.x + rng(-d.w * 0.25, d.w * 0.25), d.h + 0.02, d.z + rng(-d.d * 0.25, d.d * 0.25));
-    ac.rotation.y = rng(0, Math.PI);
-    ac.castShadow = true;
-    scene.add(ac);
+    acData.push({ x: d.x + rng(-d.w * 0.25, d.w * 0.25), y: d.h + 0.02, z: d.z + rng(-d.d * 0.25, d.d * 0.25), rot: rng(0, Math.PI) });
   }
-  /* Water tank on tallest */
   if (d.h > 3.5) {
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 6), M.met);
-    tank.position.set(d.x - d.w * 0.12, d.h + 0.06, d.z - d.d * 0.12);
-    tank.castShadow = true;
-    scene.add(tank);
-    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.008, d.h * 0.1, 4), M.met);
-    ant.position.set(d.x + d.w * 0.12, d.h + d.h * 0.05, d.z);
-    scene.add(ant);
+    tankData.push({ x: d.x - d.w * 0.12, y: d.h + 0.06, z: d.z - d.d * 0.12 });
+    antData.push({ x: d.x + d.w * 0.12, y: d.h + d.h * 0.05, z: d.z, h: d.h * 0.1 });
   }
 });
+[pentData, acData, tankData, antData].forEach((arr, idx) => {
+  if (!arr.length) return;
+  const g = [pentGeo, acGeo, tankGeo, antGeo][idx];
+  const m = [M.conc2, M.met, M.met, M.met][idx];
+  const im = makeInstanced(arr.length, g, m);
+  arr.forEach((d, i) => {
+    dummy.position.set(d.x, d.y, d.z);
+    if (idx === 0) dummy.scale.set(d.w, 1, d.d);
+    else if (idx === 3) dummy.scale.set(1, d.h, 1);
+    else dummy.scale.set(1, 1, 1);
+    if (idx === 1) dummy.rotation.set(0, d.rot, 0);
+    else dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  scene.add(im);
+});
 
-/* ── Ground-floor shop glazing + gap-shade ── */
-const shopGeo = new THREE.PlaneGeometry(1, 0.18);
+/* ── Ground-floor shop glazing (InstancedMesh) ── */
+const shopData = [];
 allBuildings.forEach((d, i) => {
   if (i % 3 !== 0) return;
-  const gl = new THREE.Mesh(shopGeo, M.winGlow);
-  gl.position.set(d.x, 0.16, d.z + d.d / 2 + 0.003);
-  gl.scale.set(d.w * 0.65, 1, 1);
-  gl.renderOrder = 1;
-  scene.add(gl);
+  shopData.push({ x: d.x, y: 0.16, z: d.z + d.d / 2 + 0.003, w: d.w * 0.65 });
 });
+if (shopData.length) {
+  const shopGeo = new THREE.PlaneGeometry(1, 0.18);
+  const im = makeInstanced(shopData.length, shopGeo, M.winGlow);
+  im.renderOrder = 1;
+  shopData.forEach((d, i) => {
+    dummy.position.set(d.x, d.y, d.z);
+    dummy.scale.set(d.w, 1, 1);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  scene.add(im);
+}
 
-/* ── Window glow on tall facades ── */
+/* ── Window glow on facades (InstancedMesh, 1 shared plane geometry) ── */
+const glowData = [];
 allBuildings.forEach(d => {
   if (d.h < 1.8) return;
-  const wg = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.8, d.h * 0.5), M.winGlow);
-  wg.position.set(d.x, d.h / 2, d.z + d.d / 2 + 0.004);
-  wg.renderOrder = 1;
-  scene.add(wg);
-  const wg2 = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.8, d.h * 0.5), M.winGlow);
-  wg2.position.set(d.x, d.h / 2, d.z - d.d / 2 - 0.004);
-  wg2.rotation.y = Math.PI;
-  wg2.renderOrder = 1;
-  scene.add(wg2);
+  glowData.push({ x: d.x, y: d.h / 2, z: d.z + d.d / 2 + 0.004, w: d.w * 0.8, h: d.h * 0.5, r: 0 });
+  glowData.push({ x: d.x, y: d.h / 2, z: d.z - d.d / 2 - 0.004, w: d.w * 0.8, h: d.h * 0.5, r: Math.PI });
 });
+if (glowData.length) {
+  const glowGeo = new THREE.PlaneGeometry(1, 1);
+  const im = makeInstanced(glowData.length, glowGeo, M.winGlow);
+  im.renderOrder = 1;
+  glowData.forEach((d, i) => {
+    dummy.position.set(d.x, d.y, d.z);
+    dummy.scale.set(d.w, d.h, 1);
+    if (d.r) dummy.rotation.set(0, d.r, 0);
+    else dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  scene.add(im);
+}
 
 /* ── Sidewalks ── */
 const swGeo = new THREE.BoxGeometry(0.35, 0.012, 0.8);
