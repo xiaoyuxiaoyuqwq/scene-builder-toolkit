@@ -609,7 +609,7 @@ hwIM.receiveShadow = true;
 scene.add(hwIM);
 
 /* ── Overpass pillars ── */
-const pillarGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.2, 4);
+const overPillarGeo = new THREE.CylinderGeometry(0.015, 0.02, 0.2, 4);
 const overGeo = new THREE.BoxGeometry(0.1, 0.08, 0.6);
 for (let hi = 0; hi < 8; hi++) {
   const ox = rng(-5, 3), oz = rng(5, 11);
@@ -617,7 +617,7 @@ for (let hi = 0; hi < 8; hi++) {
   over.position.set(ox, 0.15, oz);
   scene.add(over);
   for (let pi = 0; pi < 2; pi++) {
-    const pillar = new THREE.Mesh(pillarGeo, M.conc3);
+    const pillar = new THREE.Mesh(overPillarGeo, M.conc3);
     pillar.position.set(ox + (pi - 0.5) * 0.35, 0.08, oz);
     scene.add(pillar);
   }
