@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>空间站对接</title>
+<style>
+* { margin: 0; padding: 0; }
+body { overflow: hidden; background: #000; font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+canvas { display: block; }
+#info { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.35); text-align: center; pointer-events: none; z-index: 10; font-size: 12px; letter-spacing: 3px; text-shadow: 0 0 20px rgba(0,0,0,0.8); }
+#info span { display: inline-block; margin: 0 14px; }
+</style>
+</head>
+<body>
+<div id="info"><span>拖拽旋转</span><span>滚轮缩放</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+function rng(a, b) { return a + Math.random() * (b - a); }
+
+const RR = 3.8;
+const SEGS = 8;
+const SPOKES = 6;
+const HUB_H = 1.3;
+const HUB_R = 0.35;
+const RING_TILT_X = 0.35;
+const RING_TILT_Z = 0.2;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000008);
+
+const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(4.5, 1.6, 6.5);
+camera.lookAt(0, 0.1, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.12, 0.25, 0.05);
+composer.addPass(bloom);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 2;
+controls.maxDistance = 25;
+controls.update();
+
+const clock = new THREE.Clock();
+
+const sunPos = new THREE.Vector3(14, 7, 9);
+const sunDir = sunPos.clone().normalize();
+
+const sunLight = new THREE.DirectionalLight(0xffcc88, 2.2);
+sunLight.position.copy(sunPos);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 50;
+sunLight.shadow.camera.left = -20;
+sunLight.shadow.camera.right = 20;
+sunLight.shadow.camera.top = 20;
+sunLight.shadow.camera.bottom = -20;
+sunLight.shadow.bias = -0.002;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x3366aa, 0.35);
+fillLight.position.set(-10, -3, -8);
+scene.add(fillLight);
+
+const ambient = new THREE.AmbientLight(0x0a1020, 0.12);
+scene.add(ambient);
+
+const starCount = 2500;
+const starGeo = new THREE.BufferGeometry();
+const starPositions = new Float32Array(starCount * 3);
+const starSizes = new Float32Array(starCount);
+for (let i = 0; i < starCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 70 + Math.random() * 50;
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = r * Math.cos(phi);
+  starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  starSizes[i] = rng(0.2, 1.4);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.07, sizeAttenuation: true, transparent: true, opacity: 0.85 });
+scene.add(new THREE.Points(starGeo, starMat));
+
+const M = {
+  hull:    new THREE.MeshStandardMaterial({ color: 0xd4d4d4, roughness: 0.25, metalness: 0.5 }),
+  hullDark:new THREE.MeshStandardMaterial({ color: 0x606060, roughness: 0.4,  metalness: 0.3 }),
+  truss:   new THREE.MeshStandardMaterial({ color: 0x909090, roughness: 0.35, metalness: 0.4 }),
+  solar:   new THREE.MeshStandardMaterial({ color: 0x162d6b, roughness: 0.25, metalness: 0.1,  side: THREE.DoubleSide }),
+  solarFrm:new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 0.3,  metalness: 0.35 }),
+  rad:     new THREE.MeshStandardMaterial({ color: 0x505050, roughness: 0.7,  metalness: 0.1 }),
+  cupWin:  new THREE.MeshStandardMaterial({ color: 0x88ccff, roughness: 0.1,  metalness: 0.1,  transparent: true, opacity: 0.35 }),
+  dock:    new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.2,  metalness: 0.6 }),
+  heatShield:new THREE.MeshStandardMaterial({ color: 0x404040, roughness: 0.75, metalness: 0.05 }),
+  capsule: new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.25, metalness: 0.45 }),
+  capsuleDark:new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.4, metalness: 0.25 }),
+  noiGas:  new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.35, metalness: 0.55 }),
+  rcs:     new THREE.MeshBasicMaterial({ color: 0xff8844, transparent: true, opacity: 0.6 }),
+  ledRed:  new THREE.MeshBasicMaterial({ color: 0xff0000 }),
+  ledGreen:new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
+  ledWhite:new THREE.MeshBasicMaterial({ color: 0xffffff }),
+};
+
+function createRingSegment(idx) {
+  const g = new THREE.Group();
+  const arcLen = (2 * Math.PI * RR) / SEGS * 0.85;
+
+  const tube = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.14, arcLen, 10), M.hull
+  );
+  tube.rotation.z = Math.PI / 2;
+  tube.castShadow = true;
+  tube.receiveShadow = true;
+  g.add(tube);
+
+  const tubeInner = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.12, arcLen * 0.92, 10), M.hull
+  );
+  tubeInner.rotation.z = Math.PI / 2;
+  g.add(tubeInner);
+
+  for (let si = -1; si <= 1; si += 2) {
+    const rib = new THREE.Mesh(
+      new THREE.TorusGeometry(0.15, 0.015, 6, 8), M.hullDark
+    );
+    rib.position.set(si * arcLen / 2, 0, 0);
+    rib.rotation.z = Math.PI / 2;
+    rib.castShadow = true;
+    g.add(rib);
+  }
+
+  const radiator = new THREE.Mesh(
+    new THREE.BoxGeometry(arcLen * 0.7, 0.008, 0.18), M.rad
+  );
+  radiator.position.set(0, 0.15, 0);
+  radiator.castShadow = true;
+  g.add(radiator);
+
+  for (let j = -1; j <= 1; j += 2) {
+    for (let k = -1; k <= 1; k += 2) {
+      const fin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.015, 0.06, 0.18), M.rad
+      );
+      fin.position.set(j * arcLen * 0.25, 0.2, k * 0.06);
+      g.add(fin);
+    }
+  }
+
+  for (let w = 0; w < 4; w++) {
+    const win = new THREE.Mesh(
+      new THREE.CircleGeometry(0.028, 6), M.cupWin
+    );
+    win.position.set((w / 3 - 0.5) * arcLen * 0.7, 0, -0.145);
+    g.add(win);
+  }
+
+  return g;
+}
+
+function createRingNode(idx) {
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.28, 0.28), M.hullDark
+  );
+  box.castShadow = true;
+  g.add(box);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.03, 6, 8), M.truss
+  );
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  const ring2 = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.03, 6, 8), M.truss
+  );
+  ring2.rotation.z = Math.PI / 2;
+  g.add(ring2);
+
+  const accent = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 6, 6), M.hull
+  );
+  accent.position.set(0, 0.2, 0);
+  g.add(accent);
+
+  return g;
+}
+
+function createSpoke(angle) {
+  const g = new THREE.Group();
+  const len = RR - 0.5;
+  const spoke = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.025, len, 5), M.truss
+  );
+  spoke.position.set(0, 0, len / 2);
+  spoke.castShadow = true;
+  g.add(spoke);
+
+  for (let diag = -1; diag <= 1; diag += 2) {
+    const brace = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.008, 0.008, len * 0.55, 3), M.truss
+    );
+    brace.position.set(diag * 0.06, 0, len * 0.3);
+    brace.rotation.x = diag * 0.35;
+    g.add(brace);
+  }
+
+  for (let j = 0; j < 3; j++) {
+    const conduit = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.006, 0.006, len, 3), M.hullDark
+    );
+    conduit.position.set(rng(-0.04, 0.04), rng(-0.04, 0.04), len / 2);
+    g.add(conduit);
+  }
+
+  g.position.set(Math.cos(angle) * RR * 0.5, 0, Math.sin(angle) * RR * 0.5);
+  g.rotation.y = -angle + Math.PI / 2;
+  return g;
+}
+
+function createDockingPort(pos, quat) {
+  const g = new THREE.Group();
+
+  const adapter = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.1, 0.25, 10), M.dock
+  );
+  adapter.position.y = 0.05;
+  g.add(adapter);
+
+  const baseFlange = new THREE.Mesh(
+    new THREE.TorusGeometry(0.12, 0.02, 8, 10), M.dock
+  );
+  baseFlange.position.y = 0.16;
+  g.add(baseFlange);
+
+  const innerRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.08, 0.015, 6, 8), M.hullDark
+  );
+  innerRing.position.y = 0.15;
+  g.add(innerRing);
+
+  for (let p = 0; p < 3; p++) {
+    const petalAngle = (p / 3) * Math.PI * 2;
+    const petal = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.008, 0.06), M.hull
+    );
+    petal.position.set(
+      Math.cos(petalAngle) * 0.09,
+      0.19,
+      Math.sin(petalAngle) * 0.09
+    );
+    petal.rotation.y = petalAngle;
+    g.add(petal);
+  }
+
+  const guide1 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.004, 0.08, 4), M.truss
+  );
+  guide1.position.set(0.07, 0.14, 0);
+  g.add(guide1);
+  const guide2 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.004, 0.08, 4), M.truss
+  );
+  guide2.position.set(-0.07, 0.14, 0);
+  g.add(guide2);
+
+  const ledR = new THREE.Mesh(new THREE.SphereGeometry(0.008, 4, 4), M.ledRed);
+  ledR.position.set(0.05, 0.21, 0.05);
+  g.add(ledR);
+  const ledG = new THREE.Mesh(new THREE.SphereGeometry(0.008, 4, 4), M.ledGreen);
+  ledG.position.set(-0.05, 0.21, 0.05);
+  g.add(ledG);
+
+  g.position.copy(pos);
+  g.quaternion.copy(quat);
+  return g;
+}
+
+function createCupola() {
+  const g = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.15, 0.15, 10), M.hull
+  );
+  base.position.y = -0.07;
+  g.add(base);
+
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.2),
+    M.hullDark
+  );
+  dome.position.y = 0.02;
+  g.add(dome);
+
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    const win = new THREE.Mesh(
+      new THREE.CircleGeometry(0.025, 5),
+      M.cupWin
+    );
+    const r = 0.1;
+    win.position.set(
+      Math.cos(a) * r * 0.7,
+      0.05,
+      Math.sin(a) * r * 0.7
+    );
+    win.rotation.x = -0.5;
+    win.rotation.y = a;
+    win.rotation.z = Math.PI * 0.3;
+    g.add(win);
+  }
+
+  const topRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.12, 0.015, 6, 8), M.dock
+  );
+  topRing.position.y = 0.07;
+  g.add(topRing);
+
+  return g;
+}
+
+function createAntenna() {
+  const g = new THREE.Group();
+
+  const mast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.025, 0.3, 5), M.truss
+  );
+  mast.position.y = 0.15;
+  g.add(mast);
+
+  const dish = new THREE.Mesh(
+    new THREE.SphereGeometry(0.1, 8, 4, 0, Math.PI, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.2, metalness: 0.6, side: THREE.DoubleSide })
+  );
+  dish.position.y = 0.32;
+  g.add(dish);
+
+  const feed = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.006, 0.006, 0.06, 4), M.hullDark
+  );
+  feed.position.set(0, 0.34, 0.09);
+  g.add(feed);
+
+  return g;
+}
+
+function createSolarArray(hubOffsetAngle) {
+  const g = new THREE.Group();
+
+  const armLen = 1.2;
+  const arm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.025, armLen, 5), M.truss
+  );
+  arm.position.set(0, 0, armLen / 2);
+  arm.rotation.x = Math.PI / 2;
+  g.add(arm);
+
+  const gimbal = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.05, 0.08, 8), M.dock
+  );
+  gimbal.position.set(0, 0, 0.04);
+  g.add(gimbal);
+
+  const panelFrame = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.015, 1.8, 5), M.truss
+  );
+  panelFrame.position.set(0, 0, armLen + 1.0);
+  panelFrame.rotation.x = Math.PI / 2;
+  g.add(panelFrame);
+
+  const panelGroup = new THREE.Group();
+  const panelCount = 7;
+  for (let i = 0; i < panelCount; i++) {
+    const sub = new THREE.Group();
+
+    const ow = 0.35, oh = 0.5;
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(ow, oh), M.solar
+    );
+    panel.position.set(0, (i - panelCount / 2 + 0.5) * (oh + 0.04), 0);
+    sub.add(panel);
+
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(ow + 0.03, oh + 0.03, 0.005), M.solarFrm
+    );
+    frame.position.copy(panel.position);
+    sub.add(frame);
+
+    for (let gx = 0; gx < 4; gx++) {
+      const gridLine = new THREE.Mesh(
+        new THREE.BoxGeometry(0.008, oh - 0.06, 0.006), M.solarFrm
+      );
+      gridLine.position.set(
+        -ow / 2 + 0.06 + gx * (ow - 0.12) / 3,
+        panel.position.y,
+        panel.position.z
+      );
+      sub.add(gridLine);
+    }
+
+    panelGroup.add(sub);
+  }
+  panelGroup.position.set(0, 0, armLen + 1.0);
+  panelGroup.rotation.x = Math.PI / 2;
+  g.add(panelGroup);
+
+  return g;
+}
+
+function createSpacecraft() {
+  const g = new THREE.Group();
+
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.14, 0.22, 10), M.heatShield
+  );
+  nose.position.y = 0.1;
+  nose.castShadow = true;
+  g.add(nose);
+
+  const crewCapsule = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.14, 0.16, 0.4, 10), M.capsule
+  );
+  crewCapsule.position.y = 0.3;
+  crewCapsule.castShadow = true;
+  g.add(crewCapsule);
+
+  for (let i = 0; i < 6; i++) {
+    const wa = (i / 6) * Math.PI * 2;
+    const win = new THREE.Mesh(
+      new THREE.CircleGeometry(0.02, 6), M.cupWin
+    );
+    win.position.set(
+      Math.cos(wa) * 0.145,
+      0.35 + Math.sin(wa * 2) * 0.04,
+      Math.sin(wa) * 0.145
+    );
+    win.rotation.set(0, -wa + Math.PI / 2, 0);
+    g.add(win);
+  }
+
+  const serviceMod = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.17, 0.2, 0.35, 10), M.capsuleDark
+  );
+  serviceMod.position.y = 0.65;
+  serviceMod.castShadow = true;
+  g.add(serviceMod);
+
+  const serviceRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.21, 0.02, 6, 10), M.truss
+  );
+  serviceRing.position.y = 0.82;
+  g.add(serviceRing);
+
+  for (let s = 0; s < 2; s++) {
+    const side = s === 0 ? 1 : -1;
+    const arm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.28, 0.01), M.truss
+    );
+    arm.position.set(side * 0.06, 0.65, 0);
+    g.add(arm);
+
+    const wingPanel = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.32, 0.22), M.solar
+    );
+    wingPanel.position.set(side * 0.06, 0.65, 0.15);
+    g.add(wingPanel);
+    const wingPanel2 = wingPanel.clone();
+    wingPanel2.position.set(side * 0.06, 0.65, -0.15);
+    g.add(wingPanel2);
+
+    for (let gw = 0; gw < 3; gw++) {
+      const line = new THREE.Mesh(
+        new THREE.BoxGeometry(0.005, 0.2, 0.003), M.solarFrm
+      );
+      line.position.set(side * 0.06, 0.65, -0.1 + gw * 0.1);
+      g.add(line);
+    }
+  }
+
+  for (let j = 0; j < 2; j++) {
+    const zSign = j === 0 ? 1 : -1;
+    for (let k = -1; k <= 1; k += 2) {
+      const rcsBlock = new THREE.Mesh(
+        new THREE.BoxGeometry(0.02, 0.015, 0.02), M.capsuleDark
+      );
+      rcsBlock.position.set(k * 0.18, 0.62, zSign * 0.18);
+      g.add(rcsBlock);
+
+      const rcsNoz = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.005, 0.008, 0.015, 4), M.rcs
+      );
+      rcsNoz.position.set(k * 0.18, 0.62, zSign * 0.2);
+      rcsNoz.rotation.x = zSign * Math.PI / 2;
+      g.add(rcsNoz);
+    }
+  }
+
+  const antenna = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.008, 0.06, 4), M.capsuleDark
+  );
+  antenna.position.set(0, 0.85, 0);
+  g.add(antenna);
+  const dish = new THREE.Mesh(
+    new THREE.CircleGeometry(0.035, 6), M.dock
+  );
+  dish.position.set(0, 0.88, 0.03);
+  dish.rotation.x = Math.PI / 2;
+  g.add(dish);
+
+  const thruster = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.06, 0.06, 6), M.heatShield
+  );
+  thruster.position.y = -0.03;
+  g.add(thruster);
+
+  const probe = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.02, 0.1, 6), M.capsule
+  );
+  probe.position.y = 0.6;
+  probe.castShadow = true;
+  g.add(probe);
+
+  const dockTarget = new THREE.Mesh(
+    new THREE.TorusGeometry(0.05, 0.008, 6, 6), M.hullDark
+  );
+  dockTarget.position.y = 0.65;
+  g.add(dockTarget);
+
+  g.position.set(2.0, 0.15, 3.0);
+  const craftTarget = new THREE.Vector3(0, 0.35, 0.6);
+  g.lookAt(craftTarget);
+  return g;
+}
+
+function buildStation() {
+  const station = new THREE.Group();
+
+  const baseRing = new THREE.Mesh(
+    new THREE.TorusGeometry(RR, 0.07, 12, 64), M.truss
+  );
+  station.add(baseRing);
+
+  const ringInner = new THREE.Mesh(
+    new THREE.TorusGeometry(RR - 0.28, 0.03, 8, 48), M.hullDark
+  );
+  station.add(ringInner);
+
+  const ringOuter = new THREE.Mesh(
+    new THREE.TorusGeometry(RR + 0.28, 0.025, 8, 48), M.truss
+  );
+  station.add(ringOuter);
+
+  for (let i = 0; i < 8; i++) {
+    const a1 = (i / 8) * Math.PI * 2;
+    const brace = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.015,
+        Math.sqrt((RR - 0.28) * (RR - 0.28) + (RR + 0.28) * (RR + 0.28) - 2 * (RR - 0.28) * (RR + 0.28) * Math.cos(0.1)) * 0.3 + 0.5, 4),
+      M.truss
+    );
+    brace.position.set(Math.cos(a1) * RR * 0.5, 0, Math.sin(a1) * RR * 0.5);
+    station.add(brace);
+  }
+
+  for (let i = 0; i < SEGS; i++) {
+    const angle = (i / SEGS) * Math.PI * 2;
+    const seg = createRingSegment(i);
+    seg.position.set(Math.cos(angle) * RR, 0, Math.sin(angle) * RR);
+    seg.rotation.y = -(angle + Math.PI / 2);
+    station.add(seg);
+
+    const nodeAngle = (i / SEGS) * Math.PI * 2;
+    const node = createRingNode(i);
+    node.position.set(Math.cos(nodeAngle) * RR, 0, Math.sin(nodeAngle) * RR);
+    node.rotation.y = -(nodeAngle);
+    station.add(node);
+  }
+
+  for (let i = 0; i < SPOKES; i++) {
+    const spoke = createSpoke((i / SPOKES) * Math.PI * 2);
+    station.add(spoke);
+  }
+
+  const hub = new THREE.Group();
+
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(HUB_R, HUB_R + 0.05, HUB_H, 12), M.hull
+  );
+  core.castShadow = true;
+  core.receiveShadow = true;
+  hub.add(core);
+
+  const coreUpper = new THREE.Mesh(
+    new THREE.CylinderGeometry(HUB_R + 0.05, HUB_R - 0.05, 0.15, 12), M.hullDark
+  );
+  coreUpper.position.y = HUB_H / 2 + 0.05;
+  hub.add(coreUpper);
+  const coreLower = new THREE.Mesh(
+    new THREE.CylinderGeometry(HUB_R - 0.05, HUB_R + 0.05, 0.15, 12), M.hullDark
+  );
+  coreLower.position.y = -HUB_H / 2 - 0.05;
+  hub.add(coreLower);
+
+  for (let rb = 0; rb < 3; rb++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(HUB_R + 0.08, 0.02, 6, 12), M.truss
+    );
+    ring.position.y = -HUB_H * 0.3 + rb * HUB_H * 0.3;
+    hub.add(ring);
+  }
+
+  const port1 = createDockingPort(
+    new THREE.Vector3(0, HUB_H / 2 + 0.1, 0),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0))
+  );
+  hub.add(port1);
+
+  const port2 = createDockingPort(
+    new THREE.Vector3(0, -HUB_H / 2 - 0.1, 0),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI, 0, 0))
+  );
+  hub.add(port2);
+
+  const port3Quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+  const port3 = createDockingPort(
+    new THREE.Vector3(HUB_R + 0.15, 0, 0),
+    port3Quat
+  );
+  hub.add(port3);
+
+  const cupola = createCupola();
+  cupola.position.set(-HUB_R - 0.05, -HUB_H / 2 - 0.05, 0);
+  cupola.rotation.x = Math.PI;
+  hub.add(cupola);
+
+  const antenna = createAntenna();
+  antenna.position.set(HUB_R * 0.5, HUB_H / 2 + 0.35, HUB_R * 0.5);
+  hub.add(antenna);
+
+  station.add(hub);
+
+  const solarAngles = [0.3, 2.0, 3.5, 5.2];
+  for (const sa of solarAngles) {
+    const arr = createSolarArray(sa);
+    arr.position.set(Math.cos(sa) * (RR + 0.6), 0, Math.sin(sa) * (RR + 0.6));
+    arr.rotation.y = -sa + Math.PI;
+    station.add(arr);
+  }
+
+  station.rotation.x = RING_TILT_X;
+  station.rotation.z = RING_TILT_Z;
+  return station;
+}
+
+const station = buildStation();
+scene.add(station);
+
+const spacecraft = createSpacecraft();
+scene.add(spacecraft);
+
+const craftStart = new THREE.Vector3(2.2, 0.2, 3.2);
+const craftEnd   = new THREE.Vector3(0.5, 0.1, 0.8);
+
+/* ===== Earth ===== */
+const earthVertex = `
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  varying vec3 vWorldPos;
+  void main() {
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    vWorldPos = worldPos.xyz;
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vPos = worldPos.xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const earthFrag = `
+  uniform vec3 sunDir;
+  uniform float time;
+  varying vec3 vNormal;
+  varying vec3 vPos;
+  varying vec3 vWorldPos;
+
+  float hash(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453);
+  }
+  float noise3D(vec3 p) {
+    vec3 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),
+                    mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+               mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),
+                    mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
+  }
+  float fbm(vec3 p) {
+    float v=0.0,a=0.5;vec3 s=p;
+    for(int i=0;i<3;i++){v+=a*noise3D(s);s*=2.0;a*=0.5;}
+    return v;
+  }
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(sunDir);
+    float NdotL = dot(N, L);
+    float day = smoothstep(-0.12,0.3,NdotL);
+
+    float land = fbm(vWorldPos*0.12+vec3(10.0));
+    float landMask = smoothstep(0.47,0.55,land);
+
+    vec3 sea  = vec3(0.10,0.30,0.60);
+    vec3 landC= vec3(0.22,0.50,0.18);
+    vec3 dayCol = mix(sea,landC,landMask);
+
+    vec3 night = vec3(0.012,0.012,0.035);
+    vec3 col = mix(night,dayCol,day);
+
+    if(day<0.5 && landMask>0.25) {
+      vec3 cp = floor(vWorldPos*4.5);
+      float h = hash(cp*2.7+100.0);
+      float bright = smoothstep(0.97,1.0,h);
+      float dist = 1.0-abs(NdotL);
+      col += vec3(1.0,0.82,0.35)*bright*exp(-dist*28.0)*0.55;
+    }
+
+    float term = exp(-abs(NdotL)*14.0)*0.10;
+    col += vec3(1.0,0.45,0.15)*term;
+
+    vec3 V = normalize(cameraPosition-vWorldPos);
+    float rim = 1.0-abs(dot(N,V));
+    rim = pow(rim,3.5)*0.3;
+    col += vec3(0.25,0.55,1.0)*rim;
+
+    col = clamp(col,0.0,1.0);
+    gl_FragColor = vec4(col,1.0);
+  }
+`;
+
+const earthRadius = 5.5;
+const earthGeo = new THREE.SphereGeometry(earthRadius, 48, 48);
+const earthMat = new THREE.ShaderMaterial({
+  uniforms: { sunDir: { value: sunDir }, time: { value: 0 } },
+  vertexShader: earthVertex,
+  fragmentShader: earthFrag,
+});
+const earth = new THREE.Mesh(earthGeo, earthMat);
+earth.position.set(2, 0.3, -16);
+scene.add(earth);
+
+const atmoGeo = new THREE.SphereGeometry(earthRadius*1.025, 48, 48);
+const atmoMat = new THREE.ShaderMaterial({
+  uniforms: { sunDir: { value: sunDir } },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPos;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position,1.0);
+      vNormal = normalize(mat3(modelMatrix)*normal);
+      vPos = worldPos.xyz;
+      gl_Position = projectionMatrix * viewMatrix * worldPos;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 sunDir;
+    varying vec3 vNormal;
+    varying vec3 vPos;
+    void main() {
+      vec3 N = normalize(vNormal);
+      vec3 L = normalize(sunDir);
+      float rim = 1.0-abs(dot(N,L));
+      rim = pow(rim,3.0)*0.5;
+      float alpha = rim*0.22;
+      vec3 col = mix(vec3(0.25,0.55,1.0),vec3(1.0,0.35,0.15),pow(rim,2.0));
+      gl_FragColor = vec4(col,alpha);
+    }
+  `,
+  transparent: true,
+  side: THREE.BackSide,
+  depthWrite: false,
+});
+const atmo = new THREE.Mesh(atmoGeo, atmoMat);
+atmo.position.copy(earth.position);
+scene.add(atmo);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  const rawApproach = Math.sin(t * 0.05) * 0.5 + 0.5;
+  const easeApproach = rawApproach * rawApproach * (3 - 2 * rawApproach);
+  spacecraft.position.lerpVectors(craftStart, craftEnd, easeApproach);
+  spacecraft.rotation.y += 0.002;
+
+  station.rotation.y = t * 0.06;
+  earth.rotation.y = t * 0.012;
+  earthMat.uniforms.time.value = t;
+
+  controls.update();
+  composer.render();
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+});
+</script>
+</body>
+</html>

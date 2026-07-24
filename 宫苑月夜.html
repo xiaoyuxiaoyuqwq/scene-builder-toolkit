@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>鸾 · 宫苑月夜</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#0e0e1a; font-family:"Microsoft YaHei",serif; }
+    #info {
+      position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+      color:rgba(180,170,150,0.3); font-size:12px; letter-spacing:2px;
+      background:rgba(0,0,0,0.4); padding:4px 16px; border-radius:12px;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0e1a);
+scene.fog = new THREE.FogExp2(0x0e0e1a, 0.016);
+
+const camera = new THREE.PerspectiveCamera(28, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(11, 5, 13);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.25, 0.15, 0.04));
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.0, 0);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI / 2.2;
+controls.update();
+
+// ── Lights ──
+scene.add(new THREE.AmbientLight(0x334466, 0.35));
+scene.add(new THREE.HemisphereLight(0x8899cc, 0x222244, 0.4));
+const moon = new THREE.DirectionalLight(0x88bbff, 1.5);
+moon.position.set(-8, 12, 8);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048,2048);
+moon.shadow.camera.near = 0.5; moon.shadow.camera.far = 30;
+moon.shadow.camera.left = -10; moon.shadow.camera.right = 10;
+moon.shadow.camera.top = 10; moon.shadow.camera.bottom = -10;
+scene.add(moon);
+const warm = new THREE.DirectionalLight(0xff8844, 0.3);
+warm.position.set(3, 4, -6);
+scene.add(warm);
+
+// ── Ground ──
+scene.add(new THREE.Mesh(new THREE.PlaneGeometry(50, 50),
+  new THREE.MeshStandardMaterial({ color:0x18182a, roughness:0.95 })).rotateX(-Math.PI/2).receiveShadow = true);
+
+// ── Helpers ──
+function box(w,h,d,mat,x,y,z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function cyl(r,rt,h,mat,x,y,z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r,rt||r,h,8), mat);
+  m.position.set(x,y,z); m.castShadow = true;
+  return m;
+}
+
+const MAT = {
+  stone:  new THREE.MeshStandardMaterial({ color:0xc8b898, roughness:0.85 }),
+  stoneDk:new THREE.MeshStandardMaterial({ color:0xb0a080, roughness:0.9 }),
+  wall:   new THREE.MeshStandardMaterial({ color:0x992222, roughness:0.7 }),
+  pillar: new THREE.MeshStandardMaterial({ color:0xbb3333, roughness:0.5, metalness:0.1 }),
+  wood:   new THREE.MeshStandardMaterial({ color:0x3a2a1a, roughness:0.8 }),
+  roof:   new THREE.MeshStandardMaterial({ color:0x1a0a08, roughness:0.6, metalness:0.1 }),
+  gold:   new THREE.MeshStandardMaterial({ color:0xccaa44, roughness:0.25, metalness:0.6 }),
+  lattice:new THREE.MeshStandardMaterial({ color:0x553a1a, roughness:0.7 }),
+  paper:  new THREE.MeshStandardMaterial({ color:0xffeedd, emissive:0xffcc66, emissiveIntensity:0.12, transparent:true, opacity:0.25 }),
+  lantern:new THREE.MeshStandardMaterial({ color:0xcc3333, roughness:0.5, emissive:0xcc3333, emissiveIntensity:0.1 }),
+  glow:   new THREE.MeshStandardMaterial({ color:0xff8844, emissive:0xff6622, emissiveIntensity:3 }),
+  water:  new THREE.MeshPhysicalMaterial({ color:0x1a2a4a, roughness:0.05, metalness:0, transparent:true, opacity:0.6 }),
+  leaf:   new THREE.MeshStandardMaterial({ color:0x2a6a3a, roughness:0.8 }),
+  trunk:  new THREE.MeshStandardMaterial({ color:0x3a2a1a, roughness:0.9 }),
+  blossom:new THREE.MeshStandardMaterial({ color:0xffccdd, roughness:0.2, emissive:0xff88aa, emissiveIntensity:0.03 }),
+  willow: new THREE.MeshStandardMaterial({ color:0x3a7a3a, roughness:0.7 }),
+  bamboo: new THREE.MeshStandardMaterial({ color:0x3a8a3a, roughness:0.6 }),
+  cloud:  new THREE.MeshStandardMaterial({ color:0x334466, transparent:true, opacity:0.12, emissive:0x446688, emissiveIntensity:0.03 }),
+};
+
+// ── Palace ──
+const palace = new THREE.Group();
+for (let i=0; i<3; i++) palace.add(box(6.0-i*0.4,0.16,4.2-i*0.3,MAT.stone,0,0.08+i*0.16,0));
+palace.add(box(4.8,1.6,3.2,MAT.wall,0,0.56+0.8,0));
+[-0.45,0.45].forEach(dx=>palace.add(box(0.48,1.0,0.03,MAT.lattice,dx,0.82,1.62)));
+[-1.3,1.3].forEach(dx=>{[-0.75,0.75].forEach(dz=>{
+  palace.add(box(0.48,0.48,0.03,MAT.lattice,dx,1.08,dz));
+  palace.add(box(0.40,0.40,0.025,MAT.paper,dx,1.08,dz));
+})});
+for (let i=-1;i<=1;i+=2) for (let j=-1;j<=1;j+=2)
+  palace.add(cyl(0.08,0.10,1.8,MAT.pillar,i*2.2,0.56+0.9,j*1.4));
+[-1.6,1.6].forEach(dz=>palace.add(box(4.4,0.10,0.10,MAT.wood,0,1.74,dz)));
+for (let i=-1.6;i<=1.6;i+=0.8) for (let j=-1.2;j<=1.2;j+=2.4)
+  palace.add(box(0.10,0.05,0.12,new THREE.MeshStandardMaterial({color:0x884422,roughness:0.7}),i,1.82,j));
+
+// ── Roof ──
+[[3.0*s,0.3,1.98],[2.7,0.25,2.10],[2.5,0.22,2.20]].forEach(([w,h,y])=>{
+  const r = new THREE.Mesh(new THREE.ConeGeometry(w,h,8),MAT.roof);
+  r.position.set(0,y,0.08); r.rotation.y=Math.PI/6; r.castShadow=true; palace.add(r);});
+[[2.4,0.35,2.42],[2.2,0.28,2.58],[2.0,0.25,2.70]].forEach(([w,h,y])=>{
+  const r = new THREE.Mesh(new THREE.ConeGeometry(w,h,8),MAT.roof);
+  r.position.set(0,y,0.05); r.rotation.y=Math.PI/6; r.castShadow=true; palace.add(r);});
+palace.add(box(2.6,0.04,0.08,MAT.roof,0,2.90,0));
+palace.add(box(2.4,0.04,0.06,MAT.roof,0,2.95,0));
+[-0.7,0.7].forEach(dx=>{const c=box(0.06,0.14,0.05,MAT.gold,dx,2.98,0);c.rotation.z=dx*0.3;palace.add(c);});
+[-2.4,2.4].forEach(dx=>{[-1.6,1.6].forEach(dz=>{
+  if(Math.abs(dx)>0.8&&Math.abs(dz)>0.8){
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.035,6,6),
+      new THREE.MeshStandardMaterial({color:0xccaa44,emissive:0xff8844,emissiveIntensity:1}));
+    tip.position.set(dx,2.35,dz+0.08); palace.add(tip);}
+})});
+palace.position.set(0,0,-2);
+scene.add(palace);
+
+// ── Corridors ──
+function corr(x,z,angle){
+  const g=new THREE.Group();
+  g.add(box(0.8,0.10,4.0,MAT.roof,0,1.4,0));
+  for(let i=-1.5;i<=1.5;i++) g.add(cyl(0.04,0.05,1.2,MAT.pillar,0,0.6,i));
+  g.add(box(0.10,0.06,4.0,MAT.wood,0,1.25,0));
+  g.position.set(x,0,z);g.rotation.y=angle;return g;
+}
+scene.add(corr(-3.8,0,0));scene.add(corr(3.8,0,0));
+
+// ── Bridge ──
+const bridge=new THREE.Group();
+for(let i=0;i<7;i++){const t=(i/6)*Math.PI;const seg=box(0.30,0.05,0.8,MAT.stone,Math.cos(t)*1.2-0.2,Math.sin(t)*0.35+0.04,0);seg.rotation.z=(i/6-0.5)*0.5;bridge.add(seg);}
+bridge.add(box(2.4,0.04,0.9,MAT.stoneDk,0,0.32,0));
+[-0.42,0.42].forEach(dz=>{bridge.add(box(2.2,0.04,0.04,MAT.stone,0,0.46,dz));for(let j=-0.9;j<=0.9;j+=0.4)bridge.add(box(0.03,0.16,0.03,MAT.stone,j,0.38,dz));});
+bridge.position.set(0,0,2.5);scene.add(bridge);
+
+// ── Pond ──
+const pond=new THREE.Mesh(new THREE.CircleGeometry(1.8,20),MAT.water);
+pond.rotation.x=-Math.PI/2;pond.position.set(0,0.01,2.0);scene.add(pond);
+
+// ── Lotus ──
+function lotus(x,z){
+  const g=new THREE.Group();
+  const leaf=new THREE.Mesh(new THREE.CircleGeometry(0.10,8),MAT.leaf);
+  leaf.rotation.x=-Math.PI/2;leaf.position.y=0.02;g.add(leaf);
+  for(let i=0;i<5;i++){const a=(i/5)*Math.PI*2;
+    const p=new THREE.Mesh(new THREE.ConeGeometry(0.035,0.07,4),new THREE.MeshStandardMaterial({color:0xff8899,roughness:0.3}));
+    p.position.set(Math.sin(a)*0.02,0.05,Math.cos(a)*0.02);p.lookAt(Math.sin(a)*2,0,Math.cos(a)*2);p.rotation.x=0.4;g.add(p);}
+  g.position.set(x,0.01,z);scene.add(g);
+}
+lotus(0.3,1.8);lotus(-0.5,2.2);lotus(0.6,2.5);
+
+// ── Stone lanterns ──
+function stoneLantern(x,z){
+  const g=new THREE.Group();
+  g.add(cyl(0.15,0.2,0.08,MAT.stoneDk,0,0.04,0));
+  g.add(cyl(0.04,0.05,0.5,MAT.stone,0,0.33,0));
+  g.add(box(0.12,0.12,0.12,new THREE.MeshStandardMaterial({color:0x8a7a5a,roughness:0.7}),0,0.60,0));
+  const core=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,0.06),MAT.glow);
+  core.position.y=0.60;g.add(core);
+  const l=new THREE.PointLight(0xff6622,0.25,3);l.position.y=0.55;g.add(l);
+  g.position.set(x,0,z);scene.add(g);
+}
+stoneLantern(-2.2,1.8);stoneLantern(2.2,1.8);
+stoneLantern(-3.2,-0.5);stoneLantern(3.2,-0.5);
+
+// ── Hanging lanterns ──
+function hang(x,y,z){
+  const g=new THREE.Group();
+  g.add(cyl(0.06,0.08,0.13,MAT.lantern,0,-0.07,0));
+  const core=new THREE.Mesh(new THREE.SphereGeometry(0.035,6,6),MAT.glow);
+  core.position.y=-0.07;g.add(core);
+  g.add(cyl(0.005,0.012,0.04,new THREE.MeshStandardMaterial({color:0xccaa44}),0,-0.16,0));
+  g.position.set(x,y,z);scene.add(g);
+}
+[-2.0,2.0].forEach(dx=>{hang(dx,2.2,-1.5);hang(dx,2.2,0);});
+hang(-1.2,1.6,2.5);hang(1.2,1.6,2.5);
+
+// ── Willow ──
+function willow(x,z,s){
+  const g=new THREE.Group();g.add(cyl(0.04*s,0.08*s,0.5*s,MAT.trunk,0,0.25*s,0));
+  for(let i=0;i<16;i++){const a=Math.random()*Math.PI*2,len=(0.4+Math.random()*0.5)*s;
+    const d=new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.002,len,3),MAT.willow);
+    d.position.set(Math.cos(a)*0.15*s,0.5*s+Math.random()*0.2*s,Math.sin(a)*0.15*s);
+    d.rotation.z=Math.cos(a)*0.5;d.rotation.x=Math.sin(a)*0.5;g.add(d);}
+  g.position.set(x,0,z);scene.add(g);
+}
+willow(-4.0,4.0,1.2);willow(4.0,4.0,1.2);willow(-4.5,1.5,1.0);willow(4.5,1.5,1.0);
+
+// ── Blossom ──
+function blossom(x,z,s){
+  const g=new THREE.Group();g.add(cyl(0.03*s,0.06*s,0.5*s,MAT.trunk,0,0.25*s,0));
+  for(let i=0;i<6;i++){const a=Math.random()*Math.PI*2;
+    const b=cyl(0.015*s,0.025*s,0.25*s,MAT.trunk,Math.cos(a)*0.04*s,0.38*s,Math.sin(a)*0.04*s);
+    b.rotation.z=Math.cos(a)*0.5;b.rotation.x=Math.sin(a)*0.5;g.add(b);}
+  for(let i=0;i<30;i++){const a=Math.random()*Math.PI*2,r=(0.08+Math.random()*0.30)*s;
+    const c=new THREE.Mesh(new THREE.SphereGeometry(0.022*s*(0.5+Math.random()*0.5),4,4),MAT.blossom);
+    c.position.set(Math.cos(a)*r,(0.45+Math.random()*0.2)*s,Math.sin(a)*r);g.add(c);}
+  g.position.set(x,0,z);scene.add(g);
+}
+blossom(-2.0,4.8,1.2);blossom(2.0,4.8,1.1);blossom(-1.0,-0.2,0.9);blossom(1.0,-0.2,0.9);
+
+// ── Bamboo ──
+function bamboo(x,z){for(let i=0;i<3;i++){const s=new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.02,1.2,4),MAT.bamboo);
+  s.position.set(x+(Math.random()-0.5)*0.2,0.6,z+(Math.random()-0.5)*0.2);s.rotation.z=(Math.random()-0.5)*0.04;s.castShadow=true;scene.add(s);}}
+bamboo(-5.5,2.0);bamboo(5.5,2.0);
+
+// ── Clouds ──
+function cloud(x,y,z,s){const c=new THREE.Mesh(new THREE.SphereGeometry(s*0.6,6,6),MAT.cloud);c.scale.set(1.5,0.3,1);c.position.set(x,y,z);scene.add(c);}
+cloud(-3,4,-3,0.8);cloud(4,3.5,-2,0.6);cloud(0,5,-5,1.0);cloud(-5,4.5,4,0.7);
+
+// ── Cranes ──
+function crane(x,y,z,s){
+  const g=new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.07*s,6,6).scale(1.2,0.6,0.8),new THREE.MeshStandardMaterial({color:0xf0ebe0,roughness:0.4})));
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(0.008*s,0.012*s,0.12*s,4),new THREE.MeshStandardMaterial({color:0x1a1a1a}));
+  neck.position.set(0.10*s,0.04*s,0);neck.rotation.z=-0.4;g.add(neck);
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.018*s,4,4),new THREE.MeshStandardMaterial({color:0xf0ebe0})).translate(0.18*s,0.08*s,0));
+  [-1,1].forEach(side=>{
+    const w=new THREE.Mesh(new THREE.BoxGeometry(0.015,0.12*s,0.05*s),new THREE.MeshStandardMaterial({color:0xe8e0d0,transparent:true,opacity:0.6}));
+    w.position.set(0,0.05*s,side*0.07*s);g.add(w);});
+  g.position.set(x,y,z);scene.add(g);return g;
+}
+const c1=crane(-1.5,3.15,-1.0,0.7), c2=crane(1.8,3.15,-0.5,0.7);
+
+// ── Moon ──
+const moonMesh=new THREE.Mesh(new THREE.CircleGeometry(0.35,20),new THREE.MeshBasicMaterial({color:0xccddff,transparent:true,opacity:0.25}));
+moonMesh.position.set(-6,6,-12);scene.add(moonMesh);
+scene.add(new THREE.Mesh(new THREE.CircleGeometry(0.55,20),new THREE.MeshBasicMaterial({color:0x88aaff,transparent:true,opacity:0.06})).translate(-6,6,-12));
+
+// ── Stars ──
+const sg=new THREE.BufferGeometry();
+const sp=new Float32Array(500*3);
+for(let i=0;i<500;i++){const r=30+Math.random()*30,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+  sp[i*3]=r*Math.sin(ph)*Math.cos(th);sp[i*3+1]=Math.abs(r*Math.cos(ph));sp[i*3+2]=r*Math.sin(ph)*Math.sin(th);}
+sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({color:0xffffff,size:0.05,transparent:true,opacity:0.4,blending:THREE.AdditiveBlending})));
+
+// ── Petals ──
+const np=60,pg=new THREE.BufferGeometry(),pp=new Float32Array(np*3),ph=new Float32Array(np);
+for(let i=0;i<np;i++){pp[i*3]=(Math.random()-0.5)*14;pp[i*3+1]=2+Math.random()*3;pp[i*3+2]=(Math.random()-0.5)*10;ph[i]=Math.random()*Math.PI*2;}
+pg.setAttribute('position',new THREE.BufferAttribute(pp,3));
+const petals=new THREE.Points(pg,new THREE.PointsMaterial({color:0xffaabb,size:0.025,transparent:true,opacity:0.4,blending:THREE.AdditiveBlending}));
+scene.add(petals);
+
+// ── Fireflies ──
+const fg=new THREE.BufferGeometry(),fp=new Float32Array(40*3);
+for(let i=0;i<40;i++){fp[i*3]=(Math.random()-0.5)*10;fp[i*3+1]=0.1+Math.random()*0.6;fp[i*3+2]=(Math.random()-0.5)*8;}
+fg.setAttribute('position',new THREE.BufferAttribute(fp,3));
+const fireflies=new THREE.Points(fg,new THREE.PointsMaterial({color:0xffee88,size:0.02,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending}));
+scene.add(fireflies);
+
+// ── Animation ──
+let t=0;
+function animate(){
+  requestAnimationFrame(animate);t+=0.006;
+  const pa=petals.geometry.attributes.position.array;
+  for(let i=0;i<pa.length;i+=3){pa[i]+=Math.sin(t*0.8+ph[i/3])*0.003;pa[i+1]-=0.005;pa[i+2]+=Math.cos(t*0.6+ph[i/3])*0.003;
+    if(pa[i+1]<-0.5){pa[i]=(Math.random()-0.5)*14;pa[i+1]=3+Math.random()*2;pa[i+2]=(Math.random()-0.5)*10;}}
+  petals.geometry.attributes.position.needsUpdate=true;
+  const ff=fireflies.geometry.attributes.position.array;
+  for(let i=0;i<ff.length;i+=3){ff[i]+=Math.sin(t*1.5+i)*0.003;ff[i+1]+=Math.cos(t*1.2+i*0.7)*0.002;ff[i+2]+=Math.sin(t*1.1+i*0.5)*0.003;}
+  fireflies.geometry.attributes.position.needsUpdate=true;
+  [c1,c2].forEach((c,idx)=>{c.children.forEach(ch=>{
+    if(ch.geometry&&ch.geometry.type==='BoxGeometry'&&ch.position.x===0)
+      ch.rotation.x=(ch.position.z>0?1:-1)*(0.3+Math.sin(t*2+idx)*0.12);});});
+  scene.children.filter(c=>c.isGroup&&c.children.some(ch=>ch instanceof THREE.PointLight))
+    .forEach((g,idx)=>{const l=g.children.find(ch=>ch instanceof THREE.PointLight);if(l)l.intensity=0.2+Math.sin(t*2.5+idx*1.7)*0.08;});
+  controls.update();composer.render();
+}
+animate();
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();composer.setSize(innerWidth,innerHeight);});
+</script>
+<div id="info">🖱 拖拽 · 滚轮 · 宫苑月夜</div>
+</body>
+</html>

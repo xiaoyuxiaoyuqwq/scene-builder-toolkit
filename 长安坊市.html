@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>长安坊市</title>
+<style>
+* { margin: 0; padding: 0; }
+body { overflow: hidden; background: #1a1410; font-family: "STKaiti", "KaiTi", "Noto Serif SC", serif; }
+canvas { display: block; }
+#info { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: #f0e6d3; text-align: center; pointer-events: none; z-index: 10; text-shadow: 0 2px 8px rgba(0,0,0,0.6); }
+#info h1 { font-size: 26px; font-weight: normal; letter-spacing: 6px; margin-bottom: 2px; }
+#info p { font-size: 12px; opacity: 0.5; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<div id="info">
+  <h1>长安·坊市</h1>
+  <p>拖拽旋转 · 滚轮缩放</p>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const BLOCK = 7.5;
+const STREET = 2.5;
+const GRID = 5;
+const TOTAL = GRID * BLOCK + (GRID - 1) * STREET;
+
+function rng(a, b) { return a + Math.random() * (b - a); }
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+
+const C = {
+  sky: 0xf5d4b0, ground: 0x9c8a70, block: 0xc4b49a, street: 0xb5a487,
+  wall: 0x8b7d6b, wallLight: 0xa0907a,
+  roof: 0x4a4a4a, roofGreen: 0x3a6b3a, roofRed: 0x6b3a3a,
+  body: 0xf0e6d3, bodyRed: 0xc49a8a,
+  column: 0x8b3a3a, columnDark: 0x6b2a2a,
+  wood: 0x5a4a3a, woodLight: 0x7a6a5a,
+  treeTrunk: 0x5c3a1e, treeCrown: 0x4a7d3a, treeCrown2: 0x3a6b3a, treeCrown3: 0x5a8f4a,
+  stone: 0xb5a08a, stoneDark: 0x9a8a7a,
+  gold: 0xc4a050,
+};
+
+const FANG_NAMES = [
+  '永宁', '安仁', '光德', '延康', '通义',
+  '开化', '崇义', '长兴', '永乐', '靖安',
+  '亲仁', '永嘉', '兴宁', '安兴', '胜业',
+  '安邑', '宣平', '升平', '修行', '昭国',
+  '常乐', '道政', '平康', '宣阳', '务本',
+];
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(C.sky);
+scene.fog = new THREE.FogExp2(C.sky, 0.005);
+
+const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(28, 24, 35);
+camera.lookAt(0, 1, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.85;
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.18, 0.4, 0.1);
+composer.addPass(bloom);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.8, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 10;
+controls.maxDistance = 55;
+controls.maxPolarAngle = Math.PI / 2.2;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.update();
+
+const sun = new THREE.DirectionalLight(0xffd4a0, 2.5);
+sun.position.set(28, 38, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 90;
+sun.shadow.camera.left = -45;
+sun.shadow.camera.right = 45;
+sun.shadow.camera.top = 45;
+sun.shadow.camera.bottom = -45;
+sun.shadow.bias = -0.003;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x8899cc, 0.25);
+fill.position.set(-20, 15, -20);
+scene.add(fill);
+
+const ambient = new THREE.AmbientLight(0xffeedd, 0.2);
+scene.add(ambient);
+
+const hemi = new THREE.HemisphereLight(0xffeedd, 0x8b7d6b, 0.35);
+scene.add(hemi);
+
+const sharedMats = {
+  stone: new THREE.MeshStandardMaterial({ color: C.stone, roughness: 0.9 }),
+  stoneDark: new THREE.MeshStandardMaterial({ color: C.stoneDark, roughness: 0.9 }),
+  block: new THREE.MeshStandardMaterial({ color: C.block, roughness: 0.92 }),
+  body: new THREE.MeshStandardMaterial({ color: C.body, roughness: 0.65 }),
+  bodyRed: new THREE.MeshStandardMaterial({ color: C.bodyRed, roughness: 0.65 }),
+  column: new THREE.MeshStandardMaterial({ color: C.column, roughness: 0.5 }),
+  columnDark: new THREE.MeshStandardMaterial({ color: C.columnDark, roughness: 0.5 }),
+  wood: new THREE.MeshStandardMaterial({ color: C.wood, roughness: 0.8 }),
+  woodLight: new THREE.MeshStandardMaterial({ color: C.woodLight, roughness: 0.8 }),
+  roof: new THREE.MeshStandardMaterial({ color: C.roof, roughness: 0.85, flatShading: true }),
+  roofGreen: new THREE.MeshStandardMaterial({ color: C.roofGreen, roughness: 0.85, flatShading: true }),
+  roofRed: new THREE.MeshStandardMaterial({ color: C.roofRed, roughness: 0.85, flatShading: true }),
+  treeTrunk: new THREE.MeshStandardMaterial({ color: C.treeTrunk, roughness: 0.9 }),
+  treeCrown: new THREE.MeshStandardMaterial({ color: C.treeCrown, roughness: 0.9, flatShading: true }),
+  treeCrown2: new THREE.MeshStandardMaterial({ color: C.treeCrown2, roughness: 0.9, flatShading: true }),
+  treeCrown3: new THREE.MeshStandardMaterial({ color: C.treeCrown3, roughness: 0.9, flatShading: true }),
+  wall: new THREE.MeshStandardMaterial({ color: C.wall, roughness: 0.95 }),
+  gold: new THREE.MeshStandardMaterial({ color: C.gold, roughness: 0.4, metalness: 0.3 }),
+};
+
+function createCurvedRoof(w, d, h, mat) {
+  const geo = new THREE.CylinderGeometry(0.05, Math.max(w, d) * 0.52, h, 4);
+  geo.rotateY(Math.PI / 4);
+  const pos = geo.attributes.position;
+  const array = pos.array;
+  for (let i = 0; i < array.length; i += 3) {
+    const x = array[i], y = array[i + 1], z = array[i + 2];
+    const t = (y + h / 2) / h;
+    const curve = 1 + 0.18 * Math.pow(1 - t, 2.5);
+    array[i] = x * curve;
+    array[i + 2] = z * curve;
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+function makeColumn(h, r) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.7, r, h, 6), sharedMats.column);
+  m.castShadow = true;
+  return m;
+}
+
+function makeColumnBase(w, h) {
+  return new THREE.Mesh(new THREE.CylinderGeometry(w * 0.7, w, h, 6), sharedMats.stoneDark);
+}
+
+function makeBeam(w, h, d) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), sharedMats.wood);
+  m.castShadow = true;
+  return m;
+}
+
+function createBuilding(x, z, type) {
+  const g = new THREE.Group();
+  let bw, bd, bh, stories, bodyMat, roofMat, hasColumns, hasEave, isPagoda;
+  let hasShopAwning = false;
+
+  switch (type) {
+    case 'small':
+      bw = rng(0.9, 1.3); bd = rng(0.8, 1.1); bh = rng(0.55, 0.7);
+      bodyMat = sharedMats.body; roofMat = pick([sharedMats.roof, sharedMats.roof]);
+      stories = 1; hasColumns = true; hasEave = true; isPagoda = false;
+      break;
+    case 'large':
+      bw = rng(1.4, 1.9); bd = rng(1.2, 1.6); bh = rng(0.8, 1.0);
+      bodyMat = sharedMats.body; roofMat = pick([sharedMats.roof, sharedMats.roof]);
+      stories = 1; hasColumns = true; hasEave = true; isPagoda = false;
+      break;
+    case 'shop':
+      bw = rng(1.8, 2.3); bd = rng(1.0, 1.3); bh = rng(0.65, 0.85);
+      bodyMat = sharedMats.bodyRed; roofMat = sharedMats.roof;
+      stories = 1; hasColumns = true; hasEave = true; isPagoda = false;
+      hasShopAwning = true;
+      break;
+    case 'mansion':
+      bw = rng(2.4, 3.2); bd = rng(1.8, 2.4); bh = rng(1.0, 1.4);
+      bodyMat = sharedMats.body; roofMat = sharedMats.roofGreen;
+      stories = 1; hasColumns = true; hasEave = true; isPagoda = false;
+      break;
+    case 'pagoda':
+      bw = 1.6; bd = 1.6; bh = 0.35;
+      bodyMat = sharedMats.bodyRed; roofMat = sharedMats.roof;
+      stories = 5; hasColumns = false; hasEave = true; isPagoda = true;
+      break;
+  }
+
+  const oh = 0.12;
+
+  const plat1 = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.8, 0.05, bd + 0.8), sharedMats.stone);
+  plat1.position.y = 0.025;
+  plat1.receiveShadow = true;
+  g.add(plat1);
+
+  const plat2 = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.4, 0.07, bd + 0.4), sharedMats.stoneDark);
+  plat2.position.y = 0.07;
+  plat2.receiveShadow = true;
+  g.add(plat2);
+
+  if (isPagoda) {
+    for (let i = 0; i < stories; i++) {
+      const t = i / (stories - 1);
+      const sw = bw * (1 - t * 0.45);
+      const sd = bd * (1 - t * 0.45);
+      const floorH = 0.4;
+
+      const floorPlate = new THREE.Mesh(
+        new THREE.BoxGeometry(sw + 0.3, 0.04, sd + 0.3), sharedMats.wood
+      );
+      floorPlate.position.y = oh + i * 0.72 + 0.02;
+      floorPlate.receiveShadow = true;
+      g.add(floorPlate);
+
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(sw, floorH, sd), bodyMat
+      );
+      wall.position.y = oh + i * 0.72 + 0.04 + floorH / 2;
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      g.add(wall);
+
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(sw + 0.1, 0.06, sd + 0.1), sharedMats.woodLight
+      );
+      rail.position.y = oh + i * 0.72 + 0.04 + floorH;
+      g.add(rail);
+
+      const eaveW = sw + 0.6;
+      const eaveD = sd + 0.6;
+      const eave = new THREE.Mesh(
+        new THREE.BoxGeometry(eaveW, 0.04, eaveD), sharedMats.wood
+      );
+      eave.position.y = oh + i * 0.72 + 0.04 + floorH + 0.03;
+      eave.castShadow = true;
+      g.add(eave);
+
+      const rh = 0.22;
+      const roof = createCurvedRoof(eaveW, eaveD, rh, roofMat);
+      roof.position.y = oh + i * 0.72 + 0.04 + floorH + 0.05 + rh / 2;
+      g.add(roof);
+    }
+    const spire = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.06, 0.6, 6), sharedMats.gold
+    );
+    spire.position.y = oh + stories * 0.72;
+    g.add(spire);
+
+    const disc = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.15, 0.12, 0.04, 8), sharedMats.gold
+    );
+    disc.position.y = oh + stories * 0.72 + 0.15;
+    g.add(disc);
+
+    const disc2 = disc.clone();
+    disc2.position.y = oh + stories * 0.72 + 0.35;
+    disc2.scale.set(0.7, 1, 0.7);
+    g.add(disc2);
+  } else {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), bodyMat);
+    wall.position.y = oh + bh / 2;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    g.add(wall);
+
+    if (hasColumns) {
+      const colH = bh;
+      const colR = 0.05;
+      const cxo = bw / 2 - colR * 1.5;
+      const czo = bd / 2 - colR * 1.5;
+      const corners = [[-cxo, -czo], [cxo, -czo], [-cxo, czo], [cxo, czo]];
+      for (const [cx2, cz2] of corners) {
+        const col = makeColumn(colH, colR);
+        col.position.set(cx2, oh + colH / 2, cz2);
+        g.add(col);
+      }
+      if (bw > 1.5) {
+        const nCols = Math.min(3, Math.floor(bw / 0.6));
+        for (let j = 0; j < nCols; j++) {
+          const frac = (j + 1) / (nCols + 1);
+          const cx2 = -bw / 2 + bw * frac;
+          const col = makeColumn(colH, colR * 0.85);
+          col.position.set(cx2, oh + colH / 2, -bd / 2 + colR * 2);
+          g.add(col);
+        }
+      }
+    }
+
+    if (hasShopAwning) {
+      const awning = new THREE.Mesh(
+        new THREE.BoxGeometry(bw * 0.7, 0.04, 0.3), sharedMats.wood
+      );
+      awning.position.set(0, oh + bh * 0.6, bd / 2 + 0.15);
+      g.add(awning);
+      const pole1 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.02, 0.35, 4), sharedMats.woodLight
+      );
+      pole1.position.set(-bw * 0.3, oh + bh * 0.6 - 0.15, bd / 2 + 0.15);
+      g.add(pole1);
+      const pole2 = pole1.clone();
+      pole2.position.set(bw * 0.3, oh + bh * 0.6 - 0.15, bd / 2 + 0.15);
+      g.add(pole2);
+    }
+
+    const eaveW = bw + 0.55;
+    const eaveD = bd + 0.55;
+    const eave = new THREE.Mesh(
+      new THREE.BoxGeometry(eaveW, 0.04, eaveD), sharedMats.wood
+    );
+    eave.position.y = oh + bh + 0.02;
+    eave.castShadow = true;
+    g.add(eave);
+
+    const rh = bh * 0.45;
+    const roof = createCurvedRoof(eaveW, eaveD, rh, roofMat);
+    roof.position.y = oh + bh + 0.04 + rh / 2;
+    g.add(roof);
+
+    if (type === 'mansion') {
+      const ridgeLen = Math.max(eaveW, eaveD) * 0.52 * 0.5;
+      const rOrn = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03, 0.06, 0.1, 6), sharedMats.gold
+      );
+      rOrn.position.set(ridgeLen * 0.6, oh + bh + 0.04 + rh + 0.02, 0);
+      rOrn.rotation.x = 0.4;
+      g.add(rOrn);
+      const rOrn2 = rOrn.clone();
+      rOrn2.position.set(-ridgeLen * 0.6, oh + bh + 0.04 + rh + 0.02, 0);
+      rOrn2.rotation.x = -0.4;
+      g.add(rOrn2);
+    }
+  }
+
+  g.position.set(x, 0, z);
+  g.rotation.y = pick([0, Math.PI / 2]);
+  return g;
+}
+
+function createTree(x, z) {
+  const type = pick(['round', 'cone', 'multi']);
+  const h = rng(0.8, 1.6);
+  const g = new THREE.Group();
+
+  const trunkH = h * 0.35;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.08, trunkH, 5), sharedMats.treeTrunk
+  );
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  g.add(trunk);
+
+  if (type === 'round') {
+    const r1 = h * 0.22, r2 = h * 0.18, r3 = h * 0.14;
+    const c1 = new THREE.Mesh(
+      new THREE.SphereGeometry(r1, 5, 5), sharedMats.treeCrown
+    );
+    c1.position.set(0, trunkH + r1 * 0.5, 0);
+    c1.castShadow = true;
+    g.add(c1);
+    const c2 = new THREE.Mesh(
+      new THREE.SphereGeometry(r2, 5, 5), sharedMats.treeCrown2
+    );
+    c2.position.set(rng(-r1 * 0.4, r1 * 0.4), trunkH + r1 * 0.9, rng(-r1 * 0.4, r1 * 0.4));
+    c2.castShadow = true;
+    g.add(c2);
+    const c3 = new THREE.Mesh(
+      new THREE.SphereGeometry(r3, 5, 5), sharedMats.treeCrown3
+    );
+    c3.position.set(rng(-r1 * 0.5, r1 * 0.5), trunkH + r1 * 1.3, rng(-r1 * 0.5, r1 * 0.5));
+    c3.castShadow = true;
+    g.add(c3);
+  } else if (type === 'cone') {
+    const layers = 3;
+    for (let i = 0; i < layers; i++) {
+      const t = i / (layers - 1);
+      const cr = h * 0.18 * (1 - t * 0.5);
+      const ch = h * 0.25;
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(cr, ch, 5), pick([sharedMats.treeCrown, sharedMats.treeCrown2])
+      );
+      cone.position.y = trunkH + i * (h * 0.22) + ch / 2;
+      cone.castShadow = true;
+      g.add(cone);
+    }
+  } else {
+    const r1 = h * 0.25;
+    const c1 = new THREE.Mesh(
+      new THREE.SphereGeometry(r1, 5, 5), sharedMats.treeCrown2
+    );
+    c1.position.y = trunkH + r1 * 0.4;
+    c1.castShadow = true;
+    g.add(c1);
+    const c2 = new THREE.Mesh(
+      new THREE.SphereGeometry(r1 * 0.65, 5, 5), sharedMats.treeCrown
+    );
+    c2.position.set(rng(-r1 * 0.3, r1 * 0.3), trunkH + r1 * 1.0, rng(-r1 * 0.3, r1 * 0.3));
+    c2.castShadow = true;
+    g.add(c2);
+  }
+
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  return g;
+}
+
+function createNPC(x, z) {
+  const g = new THREE.Group();
+  const robeColor = pick([0x8b3a3a, 0x3a5a8b, 0x5a7d3a, 0x8b7d5a, 0x6b4a7d, 0x4a6b8b]);
+  const robeMat = new THREE.MeshStandardMaterial({ color: robeColor, roughness: 0.7 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xf0dcc8, roughness: 0.5 });
+  const hatMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.8 });
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 0.12), robeMat);
+  body.position.y = 0.14;
+  body.castShadow = true;
+  g.add(body);
+
+  const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.04, 0.08), robeMat);
+  shoulder.position.y = 0.26;
+  g.add(shoulder);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.065, 6, 6), skinMat);
+  head.position.y = 0.3;
+  head.castShadow = true;
+  g.add(head);
+
+  if (Math.random() > 0.5) {
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.1, 6), hatMat);
+    hat.position.y = 0.34;
+    g.add(hat);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.015, 8), hatMat);
+    brim.position.y = 0.315;
+    g.add(brim);
+  }
+
+  const armMat = new THREE.MeshStandardMaterial({ color: robeColor, roughness: 0.7 });
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.04), armMat);
+  armL.position.set(-0.12, 0.18, 0);
+  armL.rotation.z = 0.2;
+  g.add(armL);
+  const armR = armL.clone();
+  armR.position.set(0.12, 0.18, 0);
+  armR.rotation.z = -0.2;
+  g.add(armR);
+
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  return g;
+}
+
+function createWall() {
+  const g = new THREE.Group();
+  const half = TOTAL / 2 + 1.5;
+  const wallH = 1.0;
+  const wallMat = new THREE.MeshStandardMaterial({ color: C.wall, roughness: 0.95 });
+
+  const segs = [
+    { dx: 1, dz: 0, len: TOTAL + 3 },
+    { dx: -1, dz: 0, len: TOTAL + 3 },
+    { dx: 0, dz: 1, len: TOTAL + 3 },
+    { dx: 0, dz: -1, len: TOTAL + 3 },
+  ];
+  for (const s of segs) {
+    const w = s.dx !== 0 ? s.len : 0.3;
+    const d = s.dz !== 0 ? s.len : 0.3;
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(w, wallH, d), wallMat);
+    seg.position.set(s.dx * half, wallH / 2, s.dz * half);
+    seg.castShadow = true;
+    seg.receiveShadow = true;
+    g.add(seg);
+
+    const crenelCount = Math.floor((s.len - 2) / 1.0);
+    for (let k = 0; k < crenelCount; k++) {
+      const frac = (k + 0.5) / crenelCount - 0.5;
+      const cp = new THREE.Mesh(
+        new THREE.BoxGeometry(s.dx !== 0 ? 0.25 : 0.45, 0.15, s.dz !== 0 ? 0.25 : 0.45),
+        wallMat
+      );
+      cp.position.set(
+        s.dx !== 0 ? s.dx * half + frac * (s.len - 2) : s.dx * half,
+        wallH + 0.075,
+        s.dz !== 0 ? s.dz * half + frac * (s.len - 2) : s.dz * half
+      );
+      g.add(cp);
+    }
+  }
+
+  for (const side of ['east', 'west', 'south', 'north']) {
+    let gx, gz;
+    switch (side) {
+      case 'east': gx = half; gz = 0; break;
+      case 'west': gx = -half; gz = 0; break;
+      case 'south': gx = 0; gz = -half; break;
+      case 'north': gx = 0; gz = half; break;
+    }
+
+    const gateBase = new THREE.Mesh(
+      new THREE.BoxGeometry(2.2, 0.15, 1.4), sharedMats.stone
+    );
+    gateBase.position.set(gx, 0.075, gz);
+    gateBase.receiveShadow = true;
+    g.add(gateBase);
+
+    const gateColL = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.08, 1.6, 6), sharedMats.column
+    );
+    gateColL.position.set(gx - 0.9, 0.8, gz);
+    g.add(gateColL);
+    const gateColR = gateColL.clone();
+    gateColR.position.set(gx + 0.9, 0.8, gz);
+    g.add(gateColR);
+
+    const gateCross = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.06, 0.3), sharedMats.wood
+    );
+    gateCross.position.set(gx, 1.5, gz);
+    g.add(gateCross);
+
+    const gateRoof = createCurvedRoof(2.8, 1.6, 0.4, sharedMats.roofGreen);
+    gateRoof.position.set(gx, 1.65, gz);
+    g.add(gateRoof);
+
+    const gw2 = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 0.25, 1.2), sharedMats.wood
+    );
+    gw2.position.set(gx, 1.55, gz);
+    g.add(gw2);
+  }
+
+  return g;
+}
+
+function generateCity() {
+  const offset = -(TOTAL) / 2;
+
+  for (let bx = 0; bx < GRID; bx++) {
+    for (let bz = 0; bz < GRID; bz++) {
+      const cx = offset + bx * (BLOCK + STREET) + BLOCK / 2;
+      const cz = offset + bz * (BLOCK + STREET) + BLOCK / 2;
+
+      const platform = new THREE.Mesh(
+        new THREE.PlaneGeometry(BLOCK - 0.6, BLOCK - 0.6),
+        sharedMats.block
+      );
+      platform.rotation.x = -Math.PI / 2;
+      platform.position.set(cx, 0.015, cz);
+      platform.receiveShadow = true;
+      scene.add(platform);
+
+      const isDense = (bx + bz) % 3 !== 1;
+      const density = isDense ? 0.55 : 0.35;
+      const subDiv = 3;
+      const cell = BLOCK / subDiv;
+
+      for (let sx = 0; sx < subDiv; sx++) {
+        for (let sz = 0; sz < subDiv; sz++) {
+          if (Math.random() > density) continue;
+          const px = cx - BLOCK / 2 + cell / 2 + sx * cell + rng(-cell * 0.25, cell * 0.25);
+          const pz = cz - BLOCK / 2 + cell / 2 + sz * cell + rng(-cell * 0.25, cell * 0.25);
+          const idx = bx * GRID + bz;
+          let type;
+          if (idx === Math.floor(GRID * GRID / 2)) {
+            type = 'pagoda';
+          } else {
+            const roll = Math.random();
+            if (roll < 0.30) type = 'small';
+            else if (roll < 0.60) type = 'large';
+            else if (roll < 0.80) type = 'shop';
+            else type = 'mansion';
+          }
+          scene.add(createBuilding(px, pz, type));
+        }
+      }
+
+      const treeCount = Math.floor(rng(1, isDense ? 3 : 4));
+      for (let t = 0; t < treeCount; t++) {
+        const tx = cx - BLOCK / 2 + rng(0.8, BLOCK - 0.8);
+        const tz = cz - BLOCK / 2 + rng(0.8, BLOCK - 0.8);
+        scene.add(createTree(tx, tz));
+      }
+    }
+  }
+
+  for (let i = 0; i < GRID - 1; i++) {
+    for (let j = 0; j < 2; j++) {
+      const isH = j === 0;
+      const pos = offset + i * (BLOCK + STREET) + BLOCK;
+      const sLen = isH ? TOTAL - BLOCK * 0.5 : STREET * 0.85;
+      const sWid = isH ? STREET * 0.85 : TOTAL - BLOCK * 0.5;
+      const street = new THREE.Mesh(
+        new THREE.PlaneGeometry(sLen, sWid),
+        sharedMats.street ? null : new THREE.MeshStandardMaterial({ color: C.street, roughness: 1.0 })
+      );
+      if (!sharedMats.street) {
+        street.material = new THREE.MeshStandardMaterial({ color: C.street, roughness: 1.0 });
+      } else {
+        street.material = sharedMats.street;
+      }
+      street.rotation.x = -Math.PI / 2;
+      street.position.set(isH ? offset + TOTAL / 2 : pos, 0.008, isH ? pos : offset + TOTAL / 2);
+      street.receiveShadow = true;
+      scene.add(street);
+    }
+  }
+
+  scene.add(createWall());
+
+  const npcCount = 30;
+  for (let i = 0; i < npcCount; i++) {
+    const nx = -TOTAL / 2 + rng(1, TOTAL - 1);
+    const nz = -TOTAL / 2 + rng(1, TOTAL - 1);
+    scene.add(createNPC(nx, nz));
+  }
+}
+
+generateCity();
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(100, 100),
+  new THREE.MeshStandardMaterial({ color: C.ground, roughness: 1.0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.005;
+ground.receiveShadow = true;
+scene.add(ground);
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  composer.render();
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+});
+</script>
+</body>
+</html>
