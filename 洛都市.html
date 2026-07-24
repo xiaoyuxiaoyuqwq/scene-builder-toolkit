@@ -241,10 +241,62 @@ texLoader.load(
   }
 );
 
-const beach = new THREE.Mesh(new THREE.PlaneGeometry(5, 24), M.sand);
+/* ── Beach: wavy shoreline + procedural sand + wet sand strip ── */
+function wavyBeachGeo(w, len, segs, wobble) {
+  const pos = [], uvs = [], idx = [];
+  const hl = len / 2;
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const z = -hl + t * len;
+    const wv = wobble * (Math.sin(t * Math.PI * 3.2) + Math.sin(t * Math.PI * 1.5 + 1) * 0.5);
+    pos.push(-w * 0.5 + wv, 0, z);  // water side (wavy)
+    pos.push(w * 0.5 + 0.5, 0, z);  // city side (straight)
+    uvs.push(0, t, 2, t);           // extra UV range for texture
+  }
+  for (let i = 0; i < segs; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, b, c, b, d, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+function grainTex(r, g, b) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 10000; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    const br = (Math.random() - 0.5) * 40;
+    ctx.fillStyle = `rgba(${~~(r+br)},${~~(g+br)},${~~(b+br)},0.4)`;
+    ctx.fillRect(x, y, 1 + Math.random() * 4, 1 + Math.random() * 4);
+  }
+  return new THREE.CanvasTexture(c);
+}
+const sandTex = grainTex(212, 184, 136);
+sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+sandTex.repeat.set(2, 4);
+const beachGeo = wavyBeachGeo(5, 24, 30, 0.6);
+const beachMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.9, metalness: 0 });
+const beach = new THREE.Mesh(beachGeo, beachMat);
 beach.rotation.x = -Math.PI / 2;
 beach.position.set(9, 0.015, -1);
 scene.add(beach);
+
+const wetTex = grainTex(140, 125, 95);
+wetTex.wrapS = wetTex.wrapT = THREE.RepeatWrapping;
+wetTex.repeat.set(2, 4);
+const wetGeo = wavyBeachGeo(2.2, 24, 30, 0.6);
+const wetMat = new THREE.MeshStandardMaterial({ map: wetTex, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.55 });
+const wet = new THREE.Mesh(wetGeo, wetMat);
+wet.rotation.x = -Math.PI / 2;
+wet.position.set(9, 0.016, -1);
+scene.add(wet);
 
 /* ═══════ BUILDINGS — grid layout + collision-free + podium/tower variety ═══════ */
 const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
