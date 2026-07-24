@@ -140,7 +140,7 @@ function buildCity() {
     box.receiveShadow = true;
     scene.add(box);
     buildings.push(box);
-    buildingData.push({ mesh: box, x: b.x, z: b.z, w: b.w, d: b.d, h: b.h, alive: true });
+    buildingData.push({ mesh: box, x: b.x, z: b.z, w: b.w, d: b.d, h: b.h, alive: true, hp: b.h < 1.2 ? 1 : b.h < 2 ? 2 : 3 });
 
     if (b.type === 'podium') {
       const pw = b.w * 1.3, pd = b.d * 1.3, ph = b.h * 0.15;
@@ -223,8 +223,8 @@ orbitCtrl.update();
 camera.position.set(3, 3.5, 6);
 
 const keys = {};
-document.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if ('wasd '.includes(k)) keys[k] = true; });
-document.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if ('wasd '.includes(k)) keys[k] = false; });
+document.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if ('wasd'.includes(k)) keys[k] = true; });
+document.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if ('wasd'.includes(k)) keys[k] = false; });
 
 /* ═══════ DESTRUCTION ═══════ */
 let score = 0;
@@ -236,6 +236,7 @@ const totalBuildings = buildingData.length;
 
 const debrisList = [];
 const debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
+let shakeIntensity = 0;
 
 function smash() {
   let closest = null, closestDist = Infinity;
@@ -252,20 +253,46 @@ function smash() {
   }
   if (!closest) return;
 
+  const bx = closest.x, bz = closest.z, bw = closest.w, bd = closest.d, bh = closest.h;
+  const color = closest.mesh.material.color.getHex();
+
+  closest.hp--;
+  if (closest.hp > 0) {
+    /* Hit but not destroyed — small debris burst */
+    shakeIntensity = 0.03;
+    for (let i = 0; i < 5; i++) {
+      const size = rng(0.02, 0.05);
+      const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
+      piece.material = piece.material.clone();
+      piece.material.color.setHex(color);
+      piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.2), bz + rng(-bd/2, bd/2));
+      piece.userData.vel = new V3(rng(-1, 1), rng(0.5, 2), rng(-1, 1));
+      piece.userData.life = rng(0.5, 1);
+      scene.add(piece);
+      debrisList.push(piece);
+    }
+    return;
+  }
+
+  /* Full destruction */
   closest.alive = false;
   closest.mesh.visible = false;
-  const bx = closest.x, bz = closest.z, bw = closest.w, bd = closest.d, bh = closest.h;
+  shakeIntensity = 0.08;
 
-  /* Debris spawn */
+  /* Ground debris mark */
+  const mark = new THREE.Mesh(new THREE.BoxGeometry(bw * 0.9, 0.01, bd * 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.95 }));
+  mark.position.set(bx, 0.005, bz);
+  scene.add(mark);
+
+  /* Colored debris */
   const count = Math.floor(10 + bh * 8);
   for (let i = 0; i < count; i++) {
     const size = rng(0.03, 0.08);
     const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
-    piece.position.set(
-      bx + rng(-bw/2, bw/2),
-      bh * 0.5 + rng(0, bh * 0.3),
-      bz + rng(-bd/2, bd/2)
-    );
+    piece.material = piece.material.clone();
+    piece.material.color.setHex(color);
+    piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.3), bz + rng(-bd/2, bd/2));
     piece.castShadow = true;
     piece.userData.vel = new V3(rng(-1.5, 1.5), rng(1.5, 4), rng(-1.5, 1.5));
     piece.userData.life = rng(1.5, 3);
@@ -273,7 +300,7 @@ function smash() {
     debrisList.push(piece);
   }
 
-  /* Dust cloud (semi-transparent spheres) */
+  /* Dust cloud */
   for (let i = 0; i < 6; i++) {
     const dust = new THREE.Mesh(new THREE.SphereGeometry(rng(0.05, 0.15), 4, 4),
       new THREE.MeshBasicMaterial({ color: 0xccbbaa, transparent: true, opacity: 0.3 }));
@@ -383,6 +410,14 @@ function animate() {
   /* Camera follow */
   orbitCtrl.target.lerp(monster.position, dt * 4);
 
+  /* Screen shake decay */
+  if (shakeIntensity > 0) {
+    camera.position.x += rng(-shakeIntensity, shakeIntensity);
+    camera.position.y += rng(-shakeIntensity, shakeIntensity);
+    shakeIntensity *= 0.92;
+    if (shakeIntensity < 0.001) shakeIntensity = 0;
+  }
+
   /* Debris physics */
   for (let i = debrisList.length - 1; i >= 0; i--) {
     const d = debrisList[i];
@@ -422,11 +457,19 @@ function animate() {
         const target = nearby[Math.floor(Math.random() * nearby.length)];
         target.alive = false;
         target.mesh.visible = false;
+        shakeIntensity = 0.05;
         const bx = target.x, bz = target.z, bw = target.w, bd = target.d, bh = target.h;
+        const color = target.mesh.material.color.getHex();
+        const mark = new THREE.Mesh(new THREE.BoxGeometry(bw * 0.9, 0.01, bd * 0.9),
+          new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.95 }));
+        mark.position.set(bx, 0.005, bz);
+        scene.add(mark);
         const count = Math.floor(8 + bh * 6);
         for (let i = 0; i < count; i++) {
           const size = rng(0.03, 0.07);
           const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
+          piece.material = piece.material.clone();
+          piece.material.color.setHex(color);
           piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.3), bz + rng(-bd/2, bd/2));
           piece.userData.vel = new V3(rng(-1, 1), rng(1, 3), rng(-1, 1));
           piece.userData.life = rng(1, 2.5);
