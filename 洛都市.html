@@ -22,6 +22,7 @@ canvas { display: block; }
 <div id="ui">
   <button id="btn-mode" title="黄昏 ⇄ 夜间">🌅 日落 / 夜景</button>
   <button id="btn-rain" title="晴 ⇄ 雨">☀ 天气</button>
+  <button id="btn-walk" title="切换步行/俯瞰">🚶 步行</button>
 </div>
 
 <script type="importmap">
@@ -36,6 +37,7 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -65,17 +67,20 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.85;
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 300);
 camera.position.set(5, 18, 28);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-2, 3, -3);
-controls.enableDamping = true;
-controls.dampingFactor = 0.06;
-controls.minDistance = 8;
-controls.maxDistance = 55;
-controls.maxPolarAngle = Math.PI / 2.15;
-controls.update();
+const orbitCtrl = new OrbitControls(camera, renderer.domElement);
+orbitCtrl.target.set(-2, 3, -3);
+orbitCtrl.enableDamping = true;
+orbitCtrl.dampingFactor = 0.06;
+orbitCtrl.minDistance = 8;
+orbitCtrl.maxDistance = 55;
+orbitCtrl.maxPolarAngle = Math.PI / 2.15;
+orbitCtrl.update();
+
+const walkCtrl = new PointerLockControls(camera, renderer.domElement);
+let walking = false;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -875,6 +880,7 @@ function regenEnv() {
 /* ═══════ UI ═══════ */
 const btnMode = document.getElementById('btn-mode');
 const btnRain = document.getElementById('btn-rain');
+const btnWalk = document.getElementById('btn-walk');
 
 btnMode.addEventListener('click', () => {
   state.isNight = !state.isNight;
@@ -890,6 +896,64 @@ btnRain.addEventListener('click', () => {
   btnRain.classList.toggle('active', state.weather > 0);
   rainSystem.visible = state.weather === 1;
 });
+
+btnWalk.addEventListener('click', () => {
+  walking = !walking;
+  if (walking) {
+    orbitCtrl.enabled = false;
+    camera.position.set(-1, 1.7, 5);
+    walkCtrl.lock();
+    btnWalk.textContent = '🚁 俯瞰';
+  } else {
+    walkCtrl.unlock();
+    orbitCtrl.enabled = true;
+    btnWalk.textContent = '🚶 步行';
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  if (!document.pointerLockElement && walking) {
+    walking = false;
+    orbitCtrl.enabled = true;
+    btnWalk.textContent = '🚶 步行';
+  }
+});
+
+/* ═══════ WALKING ═══════ */
+const keys = {};
+document.addEventListener('keydown', e => { const k = e.key.toLowerCase(); if ('wasd'.includes(k)) keys[k] = true; });
+document.addEventListener('keyup', e => { const k = e.key.toLowerCase(); if ('wasd'.includes(k)) keys[k] = false; });
+
+const _fwd = new V3(), _rgt = new V3(), _mv = new V3();
+function updatePlayer(dt) {
+  if (!walkCtrl.isLocked) return;
+  _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  _fwd.y = 0; _fwd.normalize();
+  _rgt.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  _rgt.y = 0; _rgt.normalize();
+  _mv.set(0, 0, 0);
+  if (keys.w) _mv.add(_fwd);
+  if (keys.s) _mv.sub(_fwd);
+  if (keys.d) _mv.add(_rgt);
+  if (keys.a) _mv.sub(_rgt);
+  if (_mv.length() < 0.01) return;
+  _mv.normalize().multiplyScalar(5 * dt);
+  const nx = camera.position.x + _mv.x, nz = camera.position.z + _mv.z;
+  const r = 0.2;
+  let ok = true;
+  for (const b of allBuildings) {
+    if (Math.abs(nx - b.x) < b.w / 2 + r && Math.abs(camera.position.z - b.z) < b.d / 2 + r) { ok = false; break; }
+  }
+  if (ok) camera.position.x = nx;
+  ok = true;
+  for (const b of allBuildings) {
+    if (Math.abs(camera.position.x - b.x) < b.w / 2 + r && Math.abs(nz - b.z) < b.d / 2 + r) { ok = false; break; }
+  }
+  if (ok) camera.position.z = nz;
+  camera.position.x = Math.max(-10, Math.min(8, camera.position.x));
+  camera.position.z = Math.max(-13, Math.min(15, camera.position.z));
+  camera.position.y = 1.7;
+}
 
 /* ═══════ ANIMATION ═══════ */
 const clock = new THREE.Clock();
@@ -1026,7 +1090,8 @@ function animate() {
     scene.fog = null;
   }
 
-  controls.update();
+  if (walking) updatePlayer(dt);
+  else orbitCtrl.update();
   composer.render();
 }
 
