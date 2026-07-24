@@ -249,8 +249,8 @@ function wavyBeachGeo(w, len, segs, wobble) {
     const t = i / segs;
     const z = -hl + t * len;
     const wv = wobble * (Math.sin(t * Math.PI * 3.2) + Math.sin(t * Math.PI * 1.5 + 1) * 0.5);
-    pos.push(-w * 0.5 + wv, 0, z);  // water side (wavy)
-    pos.push(w * 0.5 + 0.5, 0, z);  // city side (straight)
+    pos.push(-w * 0.5 + wv, z, 0);  // water side (wavy)
+    pos.push(w * 0.5 + 0.5, z, 0);  // city side (straight)
     uvs.push(0, t, 2, t);           // extra UV range for texture
   }
   for (let i = 0; i < segs; i++) {
