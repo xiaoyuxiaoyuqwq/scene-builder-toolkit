@@ -227,7 +227,6 @@ texLoader.load(
     water.receiveShadow = true;
     scene.add(water);
     waterAnimate = true;
-    document.getElementById('loading').style.opacity = '0';
   },
   undefined,
   () => {
@@ -239,7 +238,6 @@ texLoader.load(
     water.receiveShadow = true;
     scene.add(water);
     waterAnimate = true;
-    document.getElementById('loading').style.opacity = '0';
   }
 );
 
@@ -842,6 +840,11 @@ btnRain.addEventListener('click', () => {
 
 /* ═══════ ANIMATION ═══════ */
 const clock = new THREE.Clock();
+
+/* Hide loading overlay once sync scene is built */
+document.getElementById('loading').style.opacity = '0';
+/* Fallback: hide after 5s no matter what */
+setTimeout(() => { document.getElementById('loading').style.opacity = '0'; }, 5000);
 
 /* Precompute car → InstancedMesh index mapping */
 const carBodMap = []; // [{ im, localIdx }]
