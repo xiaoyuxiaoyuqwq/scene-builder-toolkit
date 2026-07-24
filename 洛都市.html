@@ -248,91 +248,141 @@ beach.rotation.x = -Math.PI / 2;
 beach.position.set(10, 0.015, -5);
 scene.add(beach);
 
-/* ═══════ BUILDINGS (InstancedMesh body + optional features) ═══════ */
+/* ═══════ BUILDINGS — grid layout + collision-free + podium/tower variety ═══════ */
 const bodyGeo = new THREE.BoxGeometry(1, 1, 1);
 
-function collectInstances(matMap) {
-  const m = {};
-  for (const k of Object.keys(matMap)) m[k] = [];
-  return m;
+/* ── Collision checker ── */
+const placed = [];
+function overlaps(x, z, w, d) {
+  return placed.some(b =>
+    Math.abs(b.x - x) < (b.w + w) / 2 + 0.08 &&
+    Math.abs(b.z - z) < (b.d + d) / 2 + 0.08
+  );
+}
+function place(x, z, w, d, h, m, type) {
+  const rec = { x, z, w, d, h, m, type: type || 'box' };
+  placed.push(rec);
+  return rec;
 }
 
-const dBody = collectInstances({ g1: M.glass1, g2: M.glass2, g3: M.glass3, g4: M.glass4 });
-const mBody = collectInstances({ w1: M.warm1, w2: M.warm2, w3: M.warm3, c1: M.conc1, c2: M.conc2, c3: M.conc3 });
+/* ── Downtown core (dense skyscraper cluster, grid-aligned) ── */
+// Grid: z rows (north→south), x cols (east→west)
+// Row 0-1 (z≈-11~-9): shorter, wider
+// Row 2-3 (z≈-8~-6): medium height, main cluster  
+// Row 4   (z≈-4.5):  tallest skyline peak
+// Row 5   (z≈-3):    medium-back edge
 
-const downtownData = [
-  { x:-6,z:-7, h:5.0,w:1.2,d:0.8, mat:'g1', opt:'setback,spire,frames,roof' },
-  { x:-4,z:-6, h:4.0,w:1.0,d:1.0, mat:'g2', opt:'frames' },
-  { x:-2,z:-8, h:3.5,w:0.8,d:0.8, mat:'g3', opt:'spire' },
-  { x:-3,z:-5, h:2.5,w:0.9,d:0.7, mat:'w1', opt:'' },
-  { x:-5,z:-5, h:3.0,w:1.1,d:0.7, mat:'g4', opt:'frames' },
-  { x:-1,z:-6, h:4.5,w:1.3,d:0.9, mat:'g1', opt:'setback,spire,roof' },
-  { x:-7,z:-6, h:2.8,w:1.0,d:0.8, mat:'w2', opt:'' },
-  { x:0,z:-9,  h:3.2,w:0.9,d:0.9, mat:'g2', opt:'frames' },
-  { x:-4,z:-9, h:3.8,w:1.0,d:0.8, mat:'g3', opt:'setback,spire' },
-  { x:-6,z:-8, h:2.2,w:0.8,d:0.7, mat:'c1', opt:'' },
-  { x:-1,z:-5, h:1.8,w:0.7,d:0.6, mat:'c2', opt:'' },
-  { x:1,z:-7,  h:3.0,w:1.0,d:0.8, mat:'g4', opt:'frames' },
-  { x:2,z:-6,  h:2.5,w:0.8,d:0.7, mat:'w3', opt:'' },
-  { x:-3,z:-10,h:2.0,w:0.9,d:0.6, mat:'c3', opt:'' },
-  { x:-8,z:-9, h:1.8,w:0.7,d:0.7, mat:'c1', opt:'' },
-  { x:-5,z:-11,h:2.2,w:0.8,d:0.6, mat:'w1', opt:'' },
-  { x:1,z:-9,  h:1.6,w:0.6,d:0.6, mat:'c2', opt:'' },
-  { x:3,z:-8,  h:2.0,w:0.7,d:0.7, mat:'w2', opt:'' },
-  { x:-2,z:-11,h:1.8,w:0.6,d:0.6, mat:'c3', opt:'' },
-  { x:-7,z:-10,h:1.6,w:0.6,d:0.6, mat:'w3', opt:'' },
-  { x:0,z:-11, h:1.4,w:0.7,d:0.5, mat:'c1', opt:'' },
-  { x:-9,z:-7, h:1.8,w:0.8,d:0.5, mat:'c2', opt:'' },
-  { x:2,z:-10, h:1.6,w:0.6,d:0.6, mat:'c3', opt:'' },
-  { x:-1,z:-12,h:1.2,w:0.7,d:0.5, mat:'w1', opt:'' },
-  { x:-6,z:-4, h:1.4,w:0.6,d:0.6, mat:'w2', opt:'' },
+const dSpecs = [
+  // [x, z, w, d, h, matKey, type]
+  // Back edge row (z≈-11)
+  [-7.5, -11.0, 0.7, 0.6, 1.6, 'c2', 'box'],
+  [-5.8, -11.0, 0.9, 0.6, 2.0, 'w1', 'box'],
+  [-4.2, -11.0, 0.7, 0.6, 1.8, 'c3', 'box'],
+  [-2.5, -11.0, 1.0, 0.6, 1.8, 'w2', 'wide'],
+  [-0.8, -11.0, 0.8, 0.6, 2.2, 'w3', 'box'],
+  [1.0,  -11.0, 0.7, 0.6, 1.5, 'c1', 'box'],
+
+  // Mid core row (z≈-9)
+  [-7.0, -9.2, 0.9, 0.7, 2.5, 'c1', 'box'],
+  [-5.2, -9.2, 1.0, 0.8, 3.2, 'g3', 'podium'],
+  [-3.5, -9.3, 0.8, 0.7, 2.8, 'w1', 'box'],
+  [-1.8, -9.2, 0.9, 0.8, 3.5, 'g4', 'podium'],
+  [0.0,  -9.3, 0.7, 0.7, 2.4, 'c2', 'box'],
+  [1.6,  -9.2, 0.8, 0.7, 2.2, 'w3', 'box'],
+
+  // Main cluster row (z≈-7.5)
+  [-6.8, -7.6, 1.0, 0.8, 3.6, 'g2', 'podium'],
+  [-5.0, -7.5, 0.9, 0.7, 3.8, 'g3', 'tower'],
+  [-3.2, -7.6, 1.0, 0.9, 4.5, 'g1', 'podium'],
+  [-1.3, -7.5, 0.8, 0.7, 3.2, 'g4', 'box'],
+  [0.5,  -7.6, 1.1, 0.8, 4.0, 'g2', 'tower'],
+  [2.0,  -7.5, 0.7, 0.7, 2.8, 'w2', 'box'],
+
+  // Skyline peak row (z≈-5.5)
+  [-6.2, -5.6, 1.1, 0.9, 4.2, 'g1', 'tower'],
+  [-4.3, -5.5, 1.0, 1.0, 4.8, 'g2', 'podium'],
+  [-2.5, -5.6, 0.9, 0.8, 5.0, 'g3', 'tower'],
+  [-0.8, -5.5, 1.2, 0.9, 4.5, 'g1', 'podium'],
+  [1.2,  -5.6, 0.8, 0.8, 3.5, 'g4', 'tower'],
+
+  // Near-roof row (z≈-3.5)
+  [-5.5, -3.6, 1.0, 0.8, 3.0, 'g2', 'box'],
+  [-3.6, -3.5, 0.9, 0.7, 3.4, 'g3', 'podium'],
+  [-1.8, -3.6, 0.8, 0.8, 2.8, 'w1', 'box'],
+  [0.0,  -3.5, 1.0, 0.8, 2.6, 'g4', 'box'],
+  [1.5,  -3.6, 0.7, 0.7, 2.2, 'c3', 'box'],
 ];
 
-function addBody(collection, d) {
-  const key = d.mat;
-  const target = dBody[key] || mBody[key];
-  if (target) target.push({ x: d.x, z: d.z, h: d.h, w: d.w, d: d.d });
-}
+const downtownData = dSpecs.map(s => place(s[0], s[1], s[2], s[3], s[4], matLookup[s[5]], s[6]));
 
-downtownData.forEach(d => {
-  addBody(dBody, d);
-  addBody(mBody, d);
+/* ── Midtown (buffer zone, spread evenly, smaller) ── */
+const mSpecs = [
+  // z≈-1.5 row
+  [-8.0, -1.5, 0.8, 0.6, 1.6, M.warm1, 'box'],
+  [-6.2, -1.5, 0.7, 0.6, 2.0, M.conc1, 'box'],
+  [-4.4, -1.5, 0.9, 0.7, 1.8, M.warm2, 'box'],
+  [-2.6, -1.5, 0.7, 0.6, 2.2, M.conc2, 'box'],
+  [-0.8, -1.5, 0.8, 0.6, 1.6, M.warm3, 'box'],
+  [1.0,  -1.5, 0.7, 0.6, 1.8, M.conc3, 'box'],
+  [2.5,  -1.5, 0.8, 0.6, 1.5, M.warm1, 'box'],
+
+  // z≈0.5 row
+  [-7.5, 0.5, 0.7, 0.6, 1.5, M.conc2, 'box'],
+  [-5.5, 0.5, 0.8, 0.6, 1.8, M.warm2, 'box'],
+  [-3.5, 0.5, 0.7, 0.7, 1.6, M.conc1, 'box'],
+  [-1.5, 0.5, 0.9, 0.7, 2.0, M.warm3, 'box'],
+  [0.5,  0.5, 0.7, 0.6, 1.8, M.conc3, 'box'],
+  [2.2,  0.5, 0.8, 0.6, 1.5, M.warm1, 'box'],
+
+  // z≈2.5 row
+  [-6.8, 2.5, 0.7, 0.6, 1.4, M.conc1, 'box'],
+  [-5.0, 2.5, 0.8, 0.6, 1.8, M.conc3, 'box'],
+  [-3.0, 2.5, 0.7, 0.6, 1.5, M.warm2, 'box'],
+  [-1.0, 2.5, 0.8, 0.6, 1.6, M.warm1, 'box'],
+  [1.0,  2.5, 0.7, 0.6, 1.4, M.conc2, 'box'],
+  [2.8,  2.5, 0.8, 0.6, 1.5, M.warm3, 'box'],
+
+  // z≈4.5 row
+  [-8.0, 4.5, 0.7, 0.6, 1.2, M.conc2, 'box'],
+  [-5.8, 4.5, 0.8, 0.6, 1.5, M.warm1, 'box'],
+  [-3.6, 4.5, 0.7, 0.6, 1.6, M.conc1, 'box'],
+  [-1.4, 4.5, 0.8, 0.6, 1.4, M.warm2, 'box'],
+  [0.8,  4.5, 0.7, 0.6, 1.5, M.conc3, 'box'],
+  [2.6,  4.5, 0.8, 0.6, 1.2, M.warm3, 'box'],
+  [3.8,  4.5, 0.7, 0.6, 1.3, M.conc1, 'box'],
+
+  // z≈6.5 edge row
+  [-7.0, 6.5, 0.7, 0.6, 1.0, M.warm3, 'box'],
+  [-5.0, 6.5, 0.8, 0.6, 1.2, M.conc2, 'box'],
+  [-3.0, 6.5, 0.7, 0.6, 1.1, M.warm1, 'box'],
+  [-1.0, 6.5, 0.8, 0.6, 1.0, M.conc1, 'box'],
+  [1.0,  6.5, 0.7, 0.6, 1.2, M.warm2, 'box'],
+  [2.5,  6.5, 0.8, 0.6, 1.0, M.conc3, 'box'],
+];
+const mtownData = mSpecs.map(s => place(s[0], s[1], s[2], s[3], s[4], s[5], s[6]));
+
+/* ── Sea-side buildings (coastal strip, lowest) ── */
+const seaSpecs = [
+  [9.0, -6.0, 0.6, 0.5, 0.8, M.conc2, 'box'],
+  [9.0, -4.0, 0.6, 0.5, 1.0, M.warm1, 'box'],
+  [9.0, -2.0, 0.6, 0.5, 0.9, M.conc1, 'box'],
+  [9.0, 0.0, 0.6, 0.5, 1.1, M.warm2, 'box'],
+  [9.0, 2.0, 0.6, 0.5, 0.8, M.conc3, 'box'],
+];
+seaSpecs.forEach(s => place(s[0], s[1], s[2], s[3], s[4], s[5], s[6]));
+
+const allBuildings = placed.slice();
+
+/* ── Body InstancedMeshes per material ── */
+const bodyGroups = {};
+allBuildings.forEach(d => {
+  const k = d.m.uuid;
+  if (!bodyGroups[k]) bodyGroups[k] = { m: d.m, data: [] };
+  bodyGroups[k].data.push(d);
 });
-
-/* ── Spawn InstancedMeshes ── */
-function spawnIM(collection) {
-  for (const [key, data] of Object.entries(collection)) {
-    if (!data.length) continue;
-    const mat = collection._matMap ? collection._matMap[key] : (M[key] || pick(glassMats));
-    const im = makeInstanced(data.length, bodyGeo, mat);
-    data.forEach((d, i) => {
-      dummy.position.set(d.x, d.h / 2, d.z);
-      dummy.scale.set(d.w, d.h, d.d);
-      dummy.updateMatrix();
-      im.setMatrixAt(i, dummy.matrix);
-    });
-    im.instanceMatrix.needsUpdate = true;
-    scene.add(im);
-  }
-}
-
-const mtownData = [];
-for (let i = 0; i < 30; i++) {
-  mtownData.push({
-    x: rng(-10, 5), z: rng(-4, 6),
-    h: rng(0.6, 2.0), w: rng(0.5, 1.0), d: rng(0.4, 0.9),
-    mat: pick([...warmMats, ...concMats, M.conc3, M.warm1])
-  });
-}
-const mtBody = {};
-mtownData.forEach(d => {
-  const key = d.mat.uuid;
-  if (!mtBody[key]) mtBody[key] = { mat: d.mat, data: [] };
-  mtBody[key].data.push(d);
-});
-for (const [key, grp] of Object.entries(mtBody)) {
-  const im = makeInstanced(grp.data.length, bodyGeo, grp.mat);
-  grp.data.forEach((d, i) => {
+for (const [k, g] of Object.entries(bodyGroups)) {
+  const im = makeInstanced(g.data.length, bodyGeo, g.m);
+  g.data.forEach((d, i) => {
     dummy.position.set(d.x, d.h / 2, d.z);
     dummy.scale.set(d.w, d.h, d.d);
     dummy.updateMatrix();
@@ -344,61 +394,178 @@ for (const [key, grp] of Object.entries(mtBody)) {
   scene.add(im);
 }
 
-/* ── Optional features (setbacks, spires, frame lines, roof structures) ── */
-downtownData.forEach(d => {
-  if (!d.opt) return;
-  const opts = d.opt.split(',');
-  const { x, z, h, w, d: bd } = d;
+/* ── Podiums (wider base for podium/tower types) ── */
+const podiumGeo = new THREE.BoxGeometry(1, 1, 1);
+const podiumData = [];
+allBuildings.forEach(d => {
+  if (d.type === 'podium' || d.type === 'tower') {
+    const pw = d.w * 1.4, pd = d.d * 1.4, ph = d.h * 0.16;
+    podiumData.push({ x: d.x, z: d.z, w: pw, h: ph, d: pd, m: M.conc2 });
+  }
+});
+const podiumGroups = {};
+podiumData.forEach(d => {
+  const k = d.m.uuid;
+  if (!podiumGroups[k]) podiumGroups[k] = { m: d.m, data: [] };
+  podiumGroups[k].data.push(d);
+});
+for (const [k, g] of Object.entries(podiumGroups)) {
+  const im = makeInstanced(g.data.length, podiumGeo, g.m);
+  g.data.forEach((d, i) => {
+    dummy.position.set(d.x, d.h / 2, d.z);
+    dummy.scale.set(d.w, d.h, d.d);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  im.castShadow = true;
+  im.receiveShadow = true;
+  scene.add(im);
+}
 
-  opts.forEach(opt => {
-    if (opt === 'setback') {
-      for (let s = 0; s < 2; s++) {
-        const sr = 1 - (s + 1) * 0.15;
-        const sh = h * 0.12;
-        const sb = new THREE.Mesh(new THREE.BoxGeometry(w * sr, sh, bd * sr), pick(warmMats));
-        sb.position.set(x, h + sh / 2 + s * (h * 0.02), z);
-        sb.castShadow = true;
-        scene.add(sb);
-      }
-    }
-    if (opt === 'spire') {
-      const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.06, h * 0.15, 5), M.met);
-      sp.position.set(x, h + 0.07, z);
-      scene.add(sp);
-    }
-    if (opt === 'frames') {
-      for (let fi = 0; fi < 4; fi++) {
-        const fl = new THREE.Mesh(new THREE.BoxGeometry(0.015, h * 0.85, bd + 0.02), M.met);
-        fl.position.set(x - w / 2 + (w / 5) * (fi + 1), h / 2, z);
-        scene.add(fl);
-      }
-    }
-    if (opt === 'roof') {
-      const rs = new THREE.Mesh(new THREE.BoxGeometry(w * 0.2, 0.08, bd * 0.2), M.met);
-      rs.position.set(x, h + 0.02, z);
-      scene.add(rs);
-      for (let ri = 0; ri < 4; ri++) {
-        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, h * 0.06, 3), M.met);
-        ant.position.set(x + rng(-0.15, 0.15), h + 0.06 + h * 0.03, z + rng(-0.15, 0.15));
-        scene.add(ant);
-      }
-    }
+/* ── Setback crowns (narrower top section for tower type) ── */
+const crownGeo = new THREE.BoxGeometry(1, 1, 1);
+const crownData = [];
+allBuildings.forEach(d => {
+  if (d.type === 'tower') {
+    const ch = d.h * 0.12, cw = d.w * 0.65, cd = d.d * 0.65;
+    crownData.push({ x: d.x, z: d.z, w: cw, h: ch, d: cd, y: d.h + ch / 2, m: M.conc1 });
+  }
+});
+const crownGroups = {};
+crownData.forEach(d => {
+  const k = d.m.uuid;
+  if (!crownGroups[k]) crownGroups[k] = { m: d.m, data: [] };
+  crownGroups[k].data.push(d);
+});
+for (const [k, g] of Object.entries(crownGroups)) {
+  const im = makeInstanced(g.data.length, crownGeo, g.m);
+  g.data.forEach((d, i) => {
+    dummy.position.set(d.x, d.y, d.z);
+    dummy.scale.set(d.w, d.h, d.d);
+    dummy.updateMatrix();
+    im.setMatrixAt(i, dummy.matrix);
+  });
+  im.instanceMatrix.needsUpdate = true;
+  im.castShadow = true;
+  scene.add(im);
+}
+
+/* ── Floor bands (InstancedMesh, horizontal strips on facades) ── */
+const bandGeo = new THREE.BoxGeometry(1, 0.01, 0.012);
+const bandData = [];
+allBuildings.forEach(d => {
+  if (d.h < 1.2) return;
+  const floors = Math.floor(d.h / 0.24);
+  for (let f = 1; f < floors; f++) {
+    const fy = f * 0.24;
+    bandData.push({ x: d.x, y: fy, z: d.z + d.d / 2, w: d.w + 0.002 });
+    bandData.push({ x: d.x, y: fy, z: d.z - d.d / 2, w: d.w + 0.002 });
+  }
+});
+const bandIM = makeInstanced(bandData.length, bandGeo, M.met);
+bandData.forEach((d, i) => {
+  dummy.position.set(d.x, d.y, d.z);
+  dummy.scale.set(d.w, 1, 1);
+  dummy.updateMatrix();
+  bandIM.setMatrixAt(i, dummy.matrix);
+});
+bandIM.instanceMatrix.needsUpdate = true;
+bandIM.receiveShadow = true;
+scene.add(bandIM);
+
+/* ── Corner pillars for tall downtown ── */
+const pillarGeo = new THREE.CylinderGeometry(0.012, 0.015, 1, 5);
+const pillarData = [];
+allBuildings.forEach(d => {
+  if (d.h < 2.0) return;
+  const ps = [[d.w/2, d.d/2], [-d.w/2, d.d/2], [d.w/2, -d.d/2], [-d.w/2, -d.d/2]];
+  ps.forEach(([px, pz]) => {
+    pillarData.push({ x: d.x + px * 0.88, z: d.z + pz * 0.88, h: d.h });
   });
 });
+const pillarIM = makeInstanced(pillarData.length, pillarGeo, M.conc1);
+pillarData.forEach((d, i) => {
+  dummy.position.set(d.x, d.h / 2, d.z);
+  dummy.scale.set(1, d.h, 1);
+  dummy.updateMatrix();
+  pillarIM.setMatrixAt(i, dummy.matrix);
+});
+pillarIM.instanceMatrix.needsUpdate = true;
+pillarIM.castShadow = true;
+scene.add(pillarIM);
 
-/* ── Window glow for tall buildings ── */
-downtownData.forEach(d => {
-  if (d.h < 2.5) return;
-  const wg = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.85, d.h * 0.6), M.winGlow);
-  wg.position.set(d.x, d.h / 2, d.z + d.d / 2 + 0.005);
+/* ── Roof equipment (AC + penthouse + antenna + water tank) ── */
+const acGeo = new THREE.BoxGeometry(0.06, 0.04, 0.07);
+const pentGeo = new THREE.BoxGeometry(1, 0.12, 1);
+allBuildings.forEach(d => {
+  if (d.h < 2.0) return;
+  /* Penthouse */
+  const pent = new THREE.Mesh(pentGeo, M.conc2);
+  pent.scale.set(d.w * 0.1, 1, d.d * 0.1);
+  pent.position.set(d.x + d.w * 0.08, d.h + 0.06, d.z);
+  pent.castShadow = true;
+  scene.add(pent);
+  /* AC units */
+  for (let a = 0; a < Math.floor(rng(1, 4)); a++) {
+    const ac = new THREE.Mesh(acGeo, M.met);
+    ac.position.set(d.x + rng(-d.w * 0.25, d.w * 0.25), d.h + 0.02, d.z + rng(-d.d * 0.25, d.d * 0.25));
+    ac.rotation.y = rng(0, Math.PI);
+    ac.castShadow = true;
+    scene.add(ac);
+  }
+  /* Water tank on tallest */
+  if (d.h > 3.5) {
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 6), M.met);
+    tank.position.set(d.x - d.w * 0.12, d.h + 0.06, d.z - d.d * 0.12);
+    tank.castShadow = true;
+    scene.add(tank);
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.008, d.h * 0.1, 4), M.met);
+    ant.position.set(d.x + d.w * 0.12, d.h + d.h * 0.05, d.z);
+    scene.add(ant);
+  }
+});
+
+/* ── Ground-floor shop glazing + gap-shade ── */
+const shopGeo = new THREE.PlaneGeometry(1, 0.18);
+allBuildings.forEach((d, i) => {
+  if (i % 3 !== 0) return;
+  const gl = new THREE.Mesh(shopGeo, M.winGlow);
+  gl.position.set(d.x, 0.16, d.z + d.d / 2 + 0.003);
+  gl.scale.set(d.w * 0.65, 1, 1);
+  gl.renderOrder = 1;
+  scene.add(gl);
+});
+
+/* ── Window glow on tall facades ── */
+allBuildings.forEach(d => {
+  if (d.h < 1.8) return;
+  const wg = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.8, d.h * 0.5), M.winGlow);
+  wg.position.set(d.x, d.h / 2, d.z + d.d / 2 + 0.004);
   wg.renderOrder = 1;
   scene.add(wg);
-  const wg2 = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.85, d.h * 0.6), M.winGlow);
-  wg2.position.set(d.x, d.h / 2, d.z - d.d / 2 - 0.005);
+  const wg2 = new THREE.Mesh(new THREE.PlaneGeometry(d.w * 0.8, d.h * 0.5), M.winGlow);
+  wg2.position.set(d.x, d.h / 2, d.z - d.d / 2 - 0.004);
   wg2.rotation.y = Math.PI;
   wg2.renderOrder = 1;
   scene.add(wg2);
 });
+
+/* ── Sidewalks ── */
+const swGeo = new THREE.BoxGeometry(0.35, 0.012, 0.8);
+const swData = [];
+for (let si = -4; si <= 6; si++) { swData.push({ x: si * 0.5 + 0.5, z: 6.3 }); }
+for (let si = -6; si <= 6; si++) { swData.push({ x: si * 0.3, z: 13.5 }); }
+const swIM = makeInstanced(swData.length, swGeo, M.conc2);
+swData.forEach((d, i) => {
+  dummy.position.set(d.x, 0.008, d.z);
+  dummy.scale.set(1, 1, 1);
+  dummy.updateMatrix();
+  swIM.setMatrixAt(i, dummy.matrix);
+});
+swIM.instanceMatrix.needsUpdate = true;
+swIM.receiveShadow = true;
+scene.add(swIM);
 
 /* ═══════ HIGHWAY (InstancedMesh) ═══════ */
 const hwGeo = new THREE.BoxGeometry(0.25, 0.02, 0.8);
