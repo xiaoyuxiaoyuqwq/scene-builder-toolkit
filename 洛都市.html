@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>洛都市</title>
+<style>
+* { margin: 0; padding: 0; }
+body { overflow: hidden; background: #1a0a04; font-family: "Helvetica Neue", Arial, sans-serif; }
+canvas { display: block; }
+#info { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); color: rgba(255,200,150,0.3); text-align: center; pointer-events: none; z-index: 10; font-size: 12px; letter-spacing: 3px; text-shadow: 0 0 20px rgba(0,0,0,0.8); }
+#info span { display: inline-block; margin: 0 12px; }
+#title { position: fixed; top: 22px; left: 50%; transform: translateX(-50%); color: rgba(255,180,100,0.45); font-size: 28px; letter-spacing: 8px; pointer-events: none; z-index: 10; text-shadow: 0 2px 12px rgba(0,0,0,0.6); font-weight: 200; }
+</style>
+</head>
+<body>
+<div id="title">LOS SANTOS</div>
+<div id="info"><span>拖拽旋转</span><span>滚轮缩放</span></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+function rng(a, b) { return a + Math.random() * (b - a); }
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf59a50);
+scene.fog = new THREE.FogExp2(0xf5a060, 0.0018);
+
+const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(5, 18, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.85;
+document.body.appendChild(renderer.domElement);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.12, 0.3, 0.1);
+composer.addPass(bloom);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-2, 3, -3);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 8;
+controls.maxDistance = 55;
+controls.maxPolarAngle = Math.PI / 2.15;
+controls.update();
+
+const clock = new THREE.Clock();
+
+const sun = new THREE.DirectionalLight(0xff8844, 2.8);
+sun.position.set(-12, 6, -18);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 2048;
+sun.shadow.mapSize.height = 2048;
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -30;
+sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30;
+sun.shadow.camera.bottom = -30;
+sun.shadow.bias = -0.003;
+scene.add(sun);
+
+const fill = new THREE.DirectionalLight(0x88aacc, 0.25);
+fill.position.set(5, 8, 10);
+scene.add(fill);
+
+const ambient = new THREE.AmbientLight(0xffccaa, 0.12);
+scene.add(ambient);
+
+const hemi = new THREE.HemisphereLight(0xffaa66, 0x446688, 0.25);
+scene.add(hemi);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(120, 80),
+  new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.95 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.02;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ═══════ MATERIALS ═══════ */
+const M = {};
+
+M.glass1 = new THREE.MeshStandardMaterial({ color: 0x2a4a6a, roughness: 0.15, metalness: 0.7 });
+M.glass2 = new THREE.MeshStandardMaterial({ color: 0x3a5a7a, roughness: 0.15, metalness: 0.65 });
+M.glass3 = new THREE.MeshStandardMaterial({ color: 0x4a6a8a, roughness: 0.15, metalness: 0.6 });
+M.glass4 = new THREE.MeshStandardMaterial({ color: 0x5a7a6a, roughness: 0.2,  metalness: 0.55 });
+M.warm1 = new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.6,  metalness: 0.0 });
+M.warm2 = new THREE.MeshStandardMaterial({ color: 0xd4c4a8, roughness: 0.55, metalness: 0.0 });
+M.warm3 = new THREE.MeshStandardMaterial({ color: 0xb8a890, roughness: 0.65, metalness: 0.0 });
+M.conc1 = new THREE.MeshStandardMaterial({ color: 0xa89880, roughness: 0.7,  metalness: 0.0 });
+M.conc2 = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.75, metalness: 0.0 });
+M.conc3 = new THREE.MeshStandardMaterial({ color: 0x6a5a4a, roughness: 0.8,  metalness: 0.0 });
+M.dark  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.7,  metalness: 0.1 });
+M.met   = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, roughness: 0.3,  metalness: 0.6 });
+M.gold  = new THREE.MeshStandardMaterial({ color: 0xcc8833, roughness: 0.4,  metalness: 0.3 });
+M.palm  = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9,  metalness: 0.0, side: THREE.DoubleSide });
+M.road  = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.9,  metalness: 0.0 });
+M.sand  = new THREE.MeshStandardMaterial({ color: 0xd4b888, roughness: 0.95, metalness: 0.0 });
+M.ocean = new THREE.MeshStandardMaterial({ color: 0x1a3555, roughness: 0.05, metalness: 0.5 });
+M.mtn   = new THREE.MeshStandardMaterial({ color: 0x3a2a3a, roughness: 0.95, metalness: 0.0, flatShading: true });
+M.mtnFog= new THREE.MeshStandardMaterial({ color: 0x5a4a5a, roughness: 0.95, metalness: 0.0, transparent: true, opacity: 0.5 });
+
+const glassMats = [M.glass1, M.glass2, M.glass3, M.glass4];
+const warmMats  = [M.warm1, M.warm2, M.warm3];
+const concMats  = [M.conc1, M.conc2, M.conc3];
+
+/* ═══════ MOUNTAINS ═══════ */
+function createMountains() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 25; i++) {
+    const w = rng(3, 8), h = rng(2, 7), d = rng(3, 8);
+    const hill = new THREE.Mesh(
+      new THREE.ConeGeometry(w, h, 6), M.mtn
+    );
+    hill.position.set(
+      rng(-30, -5),
+      -h * 0.5,
+      rng(-32, -22)
+    );
+    hill.castShadow = true;
+    g.add(hill);
+  }
+  for (let i = 0; i < 12; i++) {
+    const w = rng(4, 10), h = rng(1, 4), d = rng(4, 10);
+    const hill = new THREE.Mesh(
+      new THREE.ConeGeometry(w, h, 6), M.mtnFog
+    );
+    hill.position.set(
+      rng(-32, -8),
+      -h * 0.5,
+      rng(-28, -18)
+    );
+    g.add(hill);
+  }
+  return g;
+}
+scene.add(createMountains());
+
+/* ═══════ OCEAN ═══════ */
+const ocean = new THREE.Mesh(
+  new THREE.PlaneGeometry(40, 30), M.ocean
+);
+ocean.rotation.x = -Math.PI / 2;
+ocean.position.set(15, 0.01, -10);
+ocean.receiveShadow = true;
+scene.add(ocean);
+
+const beach = new THREE.Mesh(
+  new THREE.PlaneGeometry(6, 14), M.sand
+);
+beach.rotation.x = -Math.PI / 2;
+beach.position.set(10, 0.015, -5);
+scene.add(beach);
+
+/* ═══════ SKYSCRAPERS ═══════ */
+function createTower(x, z, h, w, d, opts) {
+  const g = new THREE.Group();
+  const glass = pick(glassMats);
+  const wall = pick(warmMats);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), glass);
+  body.position.y = h / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+
+  if (opts?.setback) {
+    for (let s = 0; s < opts.setback; s++) {
+      const sr = 1 - (s + 1) * 0.15;
+      const sh = h * 0.12;
+      const sb = new THREE.Mesh(
+        new THREE.BoxGeometry(w * sr, sh, d * sr),
+        pick(warmMats)
+      );
+      sb.position.y = h + sh / 2 + s * (h * 0.02);
+      sb.castShadow = true;
+      g.add(sb);
+    }
+  }
+
+  if (opts?.spire) {
+    const sp = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.06, h * 0.15, 5), M.met
+    );
+    sp.position.y = h + 0.07;
+    g.add(sp);
+  }
+
+  if (opts?.frameLines) {
+    for (let fi = 0; fi < 4; fi++) {
+      const fl = new THREE.Mesh(
+        new THREE.BoxGeometry(0.015, h * 0.85, d + 0.02), M.met
+      );
+      fl.position.set(
+        -w / 2 + (w / 5) * (fi + 1),
+        h / 2,
+        0
+      );
+      g.add(fl);
+    }
+  }
+
+  if (opts?.roofStruct) {
+    const rs = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 0.2, 0.08, d * 0.2), M.met
+    );
+    rs.position.y = h + 0.02;
+    g.add(rs);
+    for (let ri = 0; ri < 4; ri++) {
+      const ant = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.008, 0.008, h * 0.06, 3), M.met
+      );
+      ant.position.set(rng(-0.15, 0.15), h + 0.06 + h * 0.03, rng(-0.15, 0.15));
+      g.add(ant);
+    }
+  }
+
+  const winGlow = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 0.92, h * 0.7, 0.008),
+    new THREE.MeshBasicMaterial({ color: 0xffcc88, transparent: true, opacity: rng(0.05, 0.15), depthWrite: false })
+  );
+  winGlow.position.set(0, h / 2, d / 2 + 0.006);
+  g.add(winGlow);
+
+  g.position.set(x, 0, z);
+  return g;
+}
+
+const downtownData = [
+  { x: -6, z: -7, h: 5.0, w: 1.2, d: 0.8, opts: { setback: 1, spire: true, frameLines: true, roofStruct: true } },
+  { x: -4, z: -6, h: 4.0, w: 1.0, d: 1.0, opts: { frameLines: true } },
+  { x: -2, z: -8, h: 3.5, w: 0.8, d: 0.8, opts: { spire: true } },
+  { x: -3, z: -5, h: 2.5, w: 0.9, d: 0.7, opts: {} },
+  { x: -5, z: -5, h: 3.0, w: 1.1, d: 0.7, opts: { frameLines: true } },
+  { x: -1, z: -6, h: 4.5, w: 1.3, d: 0.9, opts: { setback: 2, spire: true, roofStruct: true } },
+  { x: -7, z: -6, h: 2.8, w: 1.0, d: 0.8, opts: {} },
+  { x: 0, z: -9, h: 3.2, w: 0.9, d: 0.9, opts: { frameLines: true } },
+  { x: -4, z: -9, h: 3.8, w: 1.0, d: 0.8, opts: { setback: 1, spire: true } },
+  { x: -6, z: -8, h: 2.2, w: 0.8, d: 0.7, opts: {} },
+  { x: -1, z: -5, h: 1.8, w: 0.7, d: 0.6, opts: {} },
+  { x: 1, z: -7, h: 3.0, w: 1.0, d: 0.8, opts: { frameLines: true } },
+  { x: 2, z: -6, h: 2.5, w: 0.8, d: 0.7, opts: {} },
+  { x: -3, z: -10, h: 2.0, w: 0.9, d: 0.6, opts: {} },
+  { x: -8, z: -9, h: 1.8, w: 0.7, d: 0.7, opts: {} },
+  { x: -5, z: -11, h: 2.2, w: 0.8, d: 0.6, opts: {} },
+  { x: 1, z: -9, h: 1.6, w: 0.6, d: 0.6, opts: {} },
+  { x: 3, z: -8, h: 2.0, w: 0.7, d: 0.7, opts: {} },
+  { x: -2, z: -11, h: 1.8, w: 0.6, d: 0.6, opts: {} },
+  { x: -7, z: -10, h: 1.6, w: 0.6, d: 0.6, opts: {} },
+  { x: 0, z: -11, h: 1.4, w: 0.7, d: 0.5, opts: {} },
+  { x: -9, z: -7, h: 1.8, w: 0.8, d: 0.5, opts: {} },
+  { x: 2, z: -10, h: 1.6, w: 0.6, d: 0.6, opts: {} },
+  { x: -1, z: -12, h: 1.2, w: 0.7, d: 0.5, opts: {} },
+  { x: -6, z: -4, h: 1.4, w: 0.6, d: 0.6, opts: {} },
+];
+
+downtownData.forEach(d => {
+  scene.add(createTower(d.x, d.z, d.h, d.w, d.d, d.opts));
+});
+
+/* ═══════ MIDTOWN ═══════ */
+function createBuilding(x, z, h, w, d, color) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), color);
+  body.position.y = h / 2;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.04, 0.03, d + 0.04), pick(concMats)
+  );
+  roof.position.y = h + 0.015;
+  g.add(roof);
+
+  g.position.set(x, 0, z);
+  return g;
+}
+
+const mTownData = [];
+for (let i = 0; i < 30; i++) {
+  const x = rng(-10, 5);
+  const z = rng(-4, 6);
+  const h = rng(0.6, 2.0);
+  const w = rng(0.5, 1.0);
+  const d = rng(0.4, 0.9);
+  const color = pick([...warmMats, ...concMats, M.conc3, M.warm1]);
+  mTownData.push({ x, z, h, w, d, color });
+}
+mTownData.forEach(d => {
+  scene.add(createBuilding(d.x, d.z, d.h, d.w, d.d, d.color));
+});
+
+/* ═══════ HIGHWAY ═══════ */
+const highwayY = 0.05;
+for (let hi = -4; hi <= 6; hi += 0.8) {
+  const road = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.02, 0.8), M.road
+  );
+  road.position.set(hi * 0.5 + 0.5, highwayY, 8 + Math.sin(hi * 0.3) * 2);
+  road.receiveShadow = true;
+  scene.add(road);
+}
+
+for (let hi = 0; hi < 8; hi++) {
+  const over = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 0.08, 0.6), M.conc2
+  );
+  over.position.set(rng(-5, 3), 0.15, rng(5, 11));
+  scene.add(over);
+  for (let pi = 0; pi < 2; pi++) {
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.02, 0.2, 4), M.conc3
+    );
+    pillar.position.set(
+      over.position.x + (pi - 0.5) * 0.35,
+      0.08,
+      over.position.z
+    );
+    scene.add(pillar);
+  }
+}
+
+for (let li = 0; li < 30; li++) {
+  const lamp = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.008, 0.012, 0.2, 4), M.dark
+  );
+  lamp.position.set(
+    rng(-6, 5),
+    0.1,
+    rng(5, 12)
+  );
+  scene.add(lamp);
+}
+
+/* ═══════ PALM TREES ═══════ */
+function createPalm(x, z, h) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.06, h, 6), M.palm
+  );
+  trunk.position.y = h / 2;
+  trunk.rotation.z = rng(-0.06, 0.06);
+  g.add(trunk);
+
+  for (let f = 0; f < 10; f++) {
+    const angle = (f / 10) * Math.PI * 2 + rng(-0.1, 0.1);
+    for (let s = 0; s < 3; s++) {
+      const frond = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.35 + s * 0.08, 0.025), M.palm
+      );
+      frond.position.set(
+        Math.cos(angle) * (0.15 + s * 0.12),
+        h - 0.03 + s * 0.04,
+        Math.sin(angle) * (0.15 + s * 0.12)
+      );
+      frond.rotation.y = angle + rng(-0.1, 0.1);
+      frond.rotation.x = Math.PI / 2.5 + s * 0.15;
+      frond.rotation.z = rng(-0.2, 0.2);
+      g.add(frond);
+    }
+  }
+
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.random() * Math.PI * 2;
+  return g;
+}
+
+for (let pi = 0; pi < 25; pi++) {
+  const px = rng(-8, 6);
+  const pz = rng(7, 16);
+  const ph = rng(1.5, 3.0);
+  scene.add(createPalm(px, pz, ph));
+}
+
+for (let pi = 0; pi < 8; pi++) {
+  const px = rng(-3, 5);
+  const pz = rng(-4, 3);
+  const ph = rng(1.2, 2.0);
+  scene.add(createPalm(px, pz, ph));
+}
+
+/* ═══════ CARS ═══════ */
+const cars = [];
+const carColors = [0xcc2222, 0x2244cc, 0xeeeeee, 0x222222, 0x22aa44, 0xffcc00, 0xcc44cc, 0x888888];
+for (let ci = 0; ci < 18; ci++) {
+  const g = new THREE.Group();
+  const bodyColor = pick(carColors);
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 0.04, 0.09),
+    new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.3, metalness: 0.5 })
+  );
+  body.position.y = 0.03;
+  g.add(body);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 0.025, 0.07),
+    new THREE.MeshStandardMaterial({ color: 0x88aacc, roughness: 0.1, metalness: 0.1 })
+  );
+  cabin.position.set(0, 0.06, 0);
+  g.add(cabin);
+
+  const hl = new THREE.Mesh(
+    new THREE.SphereGeometry(0.008, 4, 4),
+    new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.7, depthWrite: false })
+  );
+  hl.position.set(0.09, 0.02, 0.04);
+  g.add(hl);
+  const hl2 = hl.clone();
+  hl2.position.set(0.09, 0.02, -0.04);
+  g.add(hl2);
+
+  const side = ci % 2 === 0 ? 1 : -1;
+  const zOff = rng(0, 1);
+  g.position.set(
+    rng(-3, 4) + side * 0.2,
+    0.04,
+    7.5 + zOff * 3 + Math.sin(ci * 0.7) * 1.5 + 0.15
+  );
+  g.rotation.y = side * rng(0.8, 1.2);
+  g.userData = { speed: rng(0.008, 0.025), dir: side };
+  scene.add(g);
+  cars.push(g);
+}
+
+/* ═══════ FRONT ROAD (strip) ═══════ */
+for (let fi = -6; fi <= 6; fi += 0.5) {
+  const frontRoad = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.015, 0.5), M.road
+  );
+  frontRoad.position.set(fi * 0.3, 0.015, 15 + Math.sin(fi * 0.5) * 0.8);
+  frontRoad.receiveShadow = true;
+  scene.add(frontRoad);
+}
+
+/* ═══════ CITY LIGHT GLOW (ambient glow over city) ═══════ */
+const glowPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(30, 20),
+  new THREE.MeshBasicMaterial({
+    color: 0xff8844,
+    transparent: true,
+    opacity: 0.04,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  })
+);
+glowPlane.rotation.x = -Math.PI / 2;
+glowPlane.position.set(-3, 0.1, -4);
+scene.add(glowPlane);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  cars.forEach(car => {
+    car.position.x += car.userData.dir * car.userData.speed;
+    if (Math.abs(car.position.x) > 6) {
+      car.userData.dir *= -1;
+      car.rotation.y = -car.rotation.y;
+    }
+    car.position.z += Math.sin(t * 0.5 + car.position.x) * 0.001;
+  });
+
+  controls.update();
+  composer.render();
+}
+
+animate();
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+});
+</script>
+</body>
+</html>
