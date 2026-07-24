@@ -19,11 +19,14 @@ canvas { display: block; }
 #restart { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); padding: 14px 32px; border: 1px solid rgba(255,200,140,0.3); background: rgba(0,0,0,0.6); color: rgba(255,200,140,0.8); font-size: 16px; letter-spacing: 2px; border-radius: 6px; cursor: pointer; backdrop-filter: blur(6px); z-index: 30; display: none; font-family: inherit; }
 #restart:hover { background: rgba(0,0,0,0.8); border-color: rgba(255,200,140,0.6); }
 #destroyed { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); color: rgba(255,200,140,0.6); font-size: 18px; letter-spacing: 2px; z-index: 25; pointer-events: none; text-align: center; display: none; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+#bar-wrap { position: fixed; top: 52px; left: 16px; width: 160px; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; z-index: 20; pointer-events: none; overflow: hidden; }
+#bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff6644, #ffcc44); border-radius: 3px; transition: width 0.3s; }
 </style>
 </head>
 <body>
 <div id="title">怪兽大破坏</div>
 <div id="ui"><div id="score">破坏: <span id="scoreVal">0</span></div></div>
+<div id="bar-wrap"><div id="bar-fill"></div></div>
 <div id="hint">🦎 WASD 移动 · 鼠标拖拽视角 · 左键/空格 破坏建筑</div>
 <div id="controls" class="show"></div>
 <div id="destroyed"></div>
@@ -219,6 +222,8 @@ scene.add(monster);
 /* ═══════ CONTROLS (third-person) ═══════ */
 const orbitCtrl = new OrbitControls(camera, renderer.domElement);
 orbitCtrl.target.copy(monster.position);
+orbitCtrl.minDistance = 3;
+orbitCtrl.maxDistance = 14;
 orbitCtrl.update();
 camera.position.set(3, 3.5, 6);
 
@@ -234,9 +239,74 @@ const restartBtn = document.getElementById('restart');
 let destroyedCount = 0;
 const totalBuildings = buildingData.length;
 
-const debrisList = [];
-const debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a7a6a, roughness: 0.8 });
 let shakeIntensity = 0;
+
+/* ═══════ DEBRIS POOL ═══════ */
+const poolSize = 250;
+const poolGeo = new THREE.BoxGeometry(1, 1, 1);
+const poolMat = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+const pool = [];
+for (let i = 0; i < poolSize; i++) {
+  const m = new THREE.Mesh(poolGeo, poolMat.clone());
+  m.visible = false;
+  m.castShadow = true;
+  m.userData.active = false;
+  scene.add(m);
+  pool.push(m);
+}
+
+function acquire(color, px, py, pz, sx, vel, life) {
+  for (const m of pool) {
+    if (m.userData.active) continue;
+    m.userData.active = true;
+    m.visible = true;
+    m.position.set(px, py, pz);
+    m.scale.set(sx, sx, sx);
+    m.material.color.setHex(color);
+    m.userData.vel = vel;
+    m.userData.life = life;
+    return m;
+  }
+  return null;
+}
+
+function release(m) {
+  m.visible = false;
+  m.userData.active = false;
+}
+
+function spawnDebris(cx, cy, cz, bw, bd, bh, color, count, spread, up, lifeR) {
+  for (let i = 0; i < count; i++) {
+    const s = rng(0.03, 0.08);
+    const vel = new V3(rng(-spread, spread), rng(up * 0.5, up), rng(-spread, spread));
+    acquire(color,
+      cx + rng(-bw/2, bw/2), cy + rng(0, bh * 0.3), cz + rng(-bd/2, bd/2),
+      s, vel, rng(lifeR * 0.7, lifeR));
+  }
+}
+
+function spawnDust(cx, cz, bh) {
+  for (let i = 0; i < 6; i++) {
+    const d = new THREE.Mesh(new THREE.SphereGeometry(rng(0.05, 0.15), 4, 4),
+      new THREE.MeshBasicMaterial({ color: 0xccbbaa, transparent: true, opacity: 0.3 }));
+    d.position.set(cx + rng(-0.3, 0.3), rng(0.2, bh * 0.5), cz + rng(-0.3, 0.3));
+    d.userData.vel = new V3(rng(-0.8, 0.8), rng(0.5, 1.5), rng(-0.8, 0.8));
+    d.userData.life = rng(0.5, 1.2);
+    d.userData.isDust = true;
+    d.userData.active = true;
+    scene.add(d);
+  }
+}
+
+const barFill = document.getElementById('bar-fill');
+
+function checkWin() {
+  if (destroyedCount >= totalBuildings) {
+    destroyedEl.textContent = `🎉 全部摧毁！得分: ${score}`;
+    destroyedEl.style.display = 'block';
+    restartBtn.style.display = 'block';
+  }
+}
 
 function smash() {
   let closest = null, closestDist = Infinity;
@@ -258,69 +328,28 @@ function smash() {
 
   closest.hp--;
   if (closest.hp > 0) {
-    /* Hit but not destroyed — small debris burst */
     shakeIntensity = 0.03;
-    for (let i = 0; i < 5; i++) {
-      const size = rng(0.02, 0.05);
-      const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
-      piece.material = piece.material.clone();
-      piece.material.color.setHex(color);
-      piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.2), bz + rng(-bd/2, bd/2));
-      piece.userData.vel = new V3(rng(-1, 1), rng(0.5, 2), rng(-1, 1));
-      piece.userData.life = rng(0.5, 1);
-      scene.add(piece);
-      debrisList.push(piece);
-    }
+    spawnDebris(bx, bh * 0.5, bz, bw, bd, bh, color, 5, 0.8, 1.5, 0.8);
     return;
   }
 
-  /* Full destruction */
   closest.alive = false;
   closest.mesh.visible = false;
   shakeIntensity = 0.08;
 
-  /* Ground debris mark */
   const mark = new THREE.Mesh(new THREE.BoxGeometry(bw * 0.9, 0.01, bd * 0.9),
     new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.95 }));
   mark.position.set(bx, 0.005, bz);
   scene.add(mark);
 
-  /* Colored debris */
-  const count = Math.floor(10 + bh * 8);
-  for (let i = 0; i < count; i++) {
-    const size = rng(0.03, 0.08);
-    const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
-    piece.material = piece.material.clone();
-    piece.material.color.setHex(color);
-    piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.3), bz + rng(-bd/2, bd/2));
-    piece.castShadow = true;
-    piece.userData.vel = new V3(rng(-1.5, 1.5), rng(1.5, 4), rng(-1.5, 1.5));
-    piece.userData.life = rng(1.5, 3);
-    scene.add(piece);
-    debrisList.push(piece);
-  }
-
-  /* Dust cloud */
-  for (let i = 0; i < 6; i++) {
-    const dust = new THREE.Mesh(new THREE.SphereGeometry(rng(0.05, 0.15), 4, 4),
-      new THREE.MeshBasicMaterial({ color: 0xccbbaa, transparent: true, opacity: 0.3 }));
-    dust.position.set(bx + rng(-0.3, 0.3), rng(0.2, bh * 0.5), bz + rng(-0.3, 0.3));
-    dust.userData.vel = new V3(rng(-0.8, 0.8), rng(0.5, 1.5), rng(-0.8, 0.8));
-    dust.userData.life = rng(0.5, 1.2);
-    dust.userData.isDust = true;
-    scene.add(dust);
-    debrisList.push(dust);
-  }
+  spawnDebris(bx, bh * 0.5, bz, bw, bd, bh, color, Math.floor(8 + bh * 8), 1.5, 3.5, 2.5);
+  spawnDust(bx, bz, bh);
 
   destroyedCount++;
   score += Math.floor(100 + bh * 50);
   scoreEl.textContent = score;
-
-  if (destroyedCount >= totalBuildings) {
-    destroyedEl.textContent = `🎉 全部摧毁！得分: ${score}`;
-    destroyedEl.style.display = 'block';
-    restartBtn.style.display = 'block';
-  }
+  barFill.style.width = `${(destroyedCount / totalBuildings) * 100}%`;
+  checkWin();
 }
 
 /* ═══════ INPUT ═══════ */
@@ -418,15 +447,11 @@ function animate() {
     if (shakeIntensity < 0.001) shakeIntensity = 0;
   }
 
-  /* Debris physics */
-  for (let i = debrisList.length - 1; i >= 0; i--) {
-    const d = debrisList[i];
+  /* Debris physics (pool iteration) */
+  for (const d of pool) {
+    if (!d.userData.active) continue;
     d.userData.life -= dt;
-    if (d.userData.life <= 0) {
-      scene.remove(d);
-      debrisList.splice(i, 1);
-      continue;
-    }
+    if (d.userData.life <= 0) { release(d); continue; }
     if (d.userData.isDust) {
       d.userData.vel.y -= 2 * dt;
       d.material.opacity = 0.3 * (d.userData.life / 1.5);
@@ -442,6 +467,17 @@ function animate() {
     }
     d.rotation.x += dt * 2;
     d.rotation.z += dt * 1.5;
+  }
+  /* Dust cleanup (spheres, not pooled) */
+  for (let i = scene.children.length - 1; i >= 0; i--) {
+    const c = scene.children[i];
+    if (c.userData && c.userData.isDust && c.userData.active) {
+      c.userData.life -= dt;
+      if (c.userData.life <= 0) { scene.remove(c); continue; }
+      c.userData.vel.y -= 2 * dt;
+      c.material.opacity = 0.3 * (c.userData.life / 1.5);
+      c.position.addScaledVector(c.userData.vel, dt);
+    }
   }
 
   /* Building destruction timeout auto-smash */
@@ -465,20 +501,11 @@ function animate() {
         mark.position.set(bx, 0.005, bz);
         scene.add(mark);
         const count = Math.floor(8 + bh * 6);
-        for (let i = 0; i < count; i++) {
-          const size = rng(0.03, 0.07);
-          const piece = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), debrisMat);
-          piece.material = piece.material.clone();
-          piece.material.color.setHex(color);
-          piece.position.set(bx + rng(-bw/2, bw/2), bh * 0.5 + rng(0, bh * 0.3), bz + rng(-bd/2, bd/2));
-          piece.userData.vel = new V3(rng(-1, 1), rng(1, 3), rng(-1, 1));
-          piece.userData.life = rng(1, 2.5);
-          scene.add(piece);
-          debrisList.push(piece);
-        }
+        spawnDebris(bx, bh * 0.5, bz, bw, bd, bh, color, count, 1, 2.5, 2);
         destroyedCount++;
         score += Math.floor(80 + bh * 40);
         scoreEl.textContent = score;
+        barFill.style.width = `${(destroyedCount / totalBuildings) * 100}%`;
         if (destroyedCount >= totalBuildings) {
           destroyedEl.textContent = `🎉 全部摧毁！得分: ${score}`;
           destroyedEl.style.display = 'block';
