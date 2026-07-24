@@ -24,11 +24,32 @@
 
 ## 快速开始
 
-1. 浏览器直接打开任意 `.html` 文件即可
-2. 或拖拽到浏览器窗口
+### 方式一：浏览器直接打开
+
+1. 下载任意 `.html` 文件
+2. 浏览器直接打开或拖入
 3. **无需安装、无需构建、无需后端**
 
 所有依赖通过 CDN (jsdelivr) 动态加载 Three.js。
+
+### 方式二：作为 AI Skill 调用（推荐）
+
+把 `场景构建.skill.md` 装到 opencode 的 skills 目录：
+
+```bash
+# macOS / Linux
+mkdir -p ~/.config/opencode/skills/场景构建
+cp 场景构建.skill.md ~/.config/opencode/skills/场景构建/SKILL.md
+
+# Windows PowerShell
+$dir = "$env:USERPROFILE\.config\opencode\skills\场景构建"
+New-Item -ItemType Directory -Path $dir -Force
+Copy-Item 场景构建.skill.md -Destination "$dir\SKILL.md" -Force
+```
+
+安装后在 opencode 对话框里用 `/场景构建` 或直接说"我要建一个XXX场景"即可触发工作流。
+
+> **兼容 opencode / Claude Code / Cursor** — 只要是遵循 skill 规范的工具都能加载
 
 ## 文件结构
 
